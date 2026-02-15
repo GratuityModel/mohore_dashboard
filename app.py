@@ -164,7 +164,7 @@ html, body, [class*="css"] { color: #000000 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Workforce, EOSG & Economic Policy Simulator")
+st.title("📊 UAE -  Mandatory Gratuity  Savings - Funding & Economic Impact analysis \n - for Private Expatriate employees")
 
 # ==========================================================
 # FILES
@@ -875,3 +875,4 @@ with tabs[4]:
         c1, c2 = st.columns(2)
         c1.metric("No Return", f"{avg_no:,.0f}")
         c2.metric("With Return", f"{avg_wr:,.0f}")
+
