@@ -164,7 +164,7 @@ html, body, [class*="css"] { color: #000000 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 UAE -  Mandatory Gratuity  Savings - Funding & Economic Impact analysis \n - for Private Expatriate employees")
+st.title("📊 UAE -  Mandatory Gratuity  Savings - Funding & Economic Impact analysis \n for Private Expatriate employees")
 
 # ==========================================================
 # FILES
@@ -529,90 +529,72 @@ eco_baseline = impact_static[
     impact_static["year"] == baseline_year
 ].copy()
 
+# Convert units
 eco_baseline["Output_Bn"] = eco_baseline["Output_Impact"] / 1_000_000_000
 eco_baseline["GVA_Bn"] = eco_baseline["GVA_Impact"] / 1_000_000_000
 eco_baseline["Jobs_K"] = eco_baseline["Jobs_Impact"] / 1_000
 
-col1, col2, col3 = st.columns(3)
+# Aggregate by Sector
+eco_grouped = eco_baseline.groupby("SectorMap").agg({
+    "Output_Bn": "sum",
+    "GVA_Bn": "sum",
+    "Jobs_K": "sum"
+}).reset_index()
 
-# ---------------------------
-# OUTPUT DONUT
-# ---------------------------
-fig_output = px.pie(
-    eco_baseline,
-    names="SectorMap",
-    values="Output_Bn",
-    hole=0.65,   # stronger donut look
-    color_discrete_sequence=px.colors.sequential.Blues_r
-)
+fig = go.Figure()
 
-fig_output.update_traces(
-    textposition="inside",
-    texttemplate="%{value:.2f} Bn",
-    textfont=dict(size=12, color="black")
-)
+# ----------------------------------
+# Output Bars
+# ----------------------------------
+fig.add_trace(go.Bar(
+    x=eco_grouped["SectorMap"],
+    y=eco_grouped["Output_Bn"],
+    name="Output Impact (Bn)",
+    marker_color="#1f77b4"
+))
 
-fig_output.update_layout(
-    title=dict(text="Output Impact (Bn)", x=0.5),
+# ----------------------------------
+# GVA Bars
+# ----------------------------------
+fig.add_trace(go.Bar(
+    x=eco_grouped["SectorMap"],
+    y=eco_grouped["GVA_Bn"],
+    name="GVA Impact (Bn)",
+    marker_color="#2ca02c"
+))
+
+# ----------------------------------
+# Jobs Line (Secondary Axis)
+# ----------------------------------
+fig.add_trace(go.Scatter(
+    x=eco_grouped["SectorMap"],
+    y=eco_grouped["Jobs_K"],
+    name="Jobs Impact (Thousand)",
+    mode="lines+markers",
+    yaxis="y2",
+    marker=dict(color="#ff7f0e", size=8),
+    line=dict(width=3)
+))
+
+fig.update_layout(
+    barmode="group",
     template="plotly_white",
-    showlegend=True
+    height=600,
+    xaxis=dict(title="Sector"),
+    yaxis=dict(title="Impact (Bn)"),
+    yaxis2=dict(
+        title="Jobs Impact (Thousand)",
+        overlaying="y",
+        side="right",
+        showgrid=False
+    ),
+    legend=dict(
+        orientation="h",
+        y=1.1
+    )
 )
 
-col1.plotly_chart(fig_output, use_container_width=True)
-
-
-# ---------------------------
-# GVA DONUT
-# ---------------------------
-fig_gva = px.pie(
-    eco_baseline,
-    names="SectorMap",
-    values="GVA_Bn",
-    hole=0.65,
-    color_discrete_sequence=px.colors.sequential.Greens
-)
-
-fig_gva.update_traces(
-    textposition="inside",
-    texttemplate="%{value:.2f} Bn",
-    textfont=dict(size=12, color="black")
-)
-
-fig_gva.update_layout(
-    title=dict(text="GVA Impact (Bn)", x=0.5),
-    template="plotly_white",
-    showlegend=True
-)
-
-col2.plotly_chart(fig_gva, use_container_width=True)
-
-
-# ---------------------------
-# JOBS DONUT
-# ---------------------------
-fig_jobs = px.pie(
-    eco_baseline,
-    names="SectorMap",
-    values="Jobs_K",
-    hole=0.65,
-    color_discrete_sequence=px.colors.sequential.Oranges
-)
-
-fig_jobs.update_traces(
-    textposition="inside",
-    texttemplate="%{value:.2f} K",
-    textfont=dict(size=12, color="black")
-)
-
-fig_jobs.update_layout(
-    title=dict(text="Jobs Impact (Thousand)", x=0.5),
-    template="plotly_white",
-    showlegend=True
-)
-
-col3.plotly_chart(fig_jobs, use_container_width=True)
-
-
+st.plotly_chart(fig, use_container_width=True)
 
 
 # ==========================================================
@@ -816,33 +798,53 @@ with tabs[2]:
 with tabs[3]:
 
     compare = industry_dyn.groupby("year").agg({
-        "annual_total_salary":"sum",
-        "closing_fund_with_return":"sum"
+        "annual_total_salary": "sum",
+        "closing_fund_with_return": "sum"
     }).reset_index()
 
     fig = go.Figure()
 
+    # -------------------------------
+    # Payroll Bars (Light Color)
+    # -------------------------------
     fig.add_trace(go.Bar(
         x=compare["year"],
-        y=compare["annual_total_salary"]/1e9,
+        y=compare["annual_total_salary"] / 1e9,
         name="Payroll",
+        marker_color="#9ecae1",  # light blue
         yaxis="y2"
     ))
 
+    # -------------------------------
+    # Fund Line (Dark & On Top)
+    # -------------------------------
     fig.add_trace(go.Scatter(
         x=compare["year"],
-        y=compare["closing_fund_with_return"]/1e9,
-        name="Fund"
+        y=compare["closing_fund_with_return"] / 1e9,
+        name="Fund",
+        mode="lines+markers",
+        line=dict(color="#90EE90", width=4),  # green
+        marker=dict(size=7)
     ))
 
     fig.update_layout(
-        yaxis=dict(title="Fund (Bn)"),
-        yaxis2=dict(title="Payroll (Bn)",
-                    overlaying="y",
-                    side="right")
+        template="plotly_white",
+        height=500,
+        yaxis=dict(
+            title="Fund (Bn)",
+            showgrid=True
+        ),
+        yaxis2=dict(
+            title="Payroll (Bn)",
+            overlaying="y",
+            side="right",
+            showgrid=False
+        ),
+        legend=dict(orientation="h", y=1.1)
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
 
 # Individual Benefit
 with tabs[4]:
@@ -875,4 +877,3 @@ with tabs[4]:
         c1, c2 = st.columns(2)
         c1.metric("No Return", f"{avg_no:,.0f}")
         c2.metric("With Return", f"{avg_wr:,.0f}")
-
