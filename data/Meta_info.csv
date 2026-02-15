@@ -1,0 +1,53 @@
+Industry,Year,Tenure,Age_Bracket,Old_Tenure
+A-Agriculture and fishing,2025,0,<55,1
+B-Mining and quarrying,2026,1,55-59,2
+C-Manufacturing,2027,2,60-64,3
+D-Electricity and gas supply,2028,3,65-69,4
+"E-Water supply, sewerage and waste",2029,4,70+,5
+F-Construction,2030,5,,6
+G-Wholesale and retail,2031,6,,7
+H-Transportation and storage,2032,7,,8
+I-Accommodation and food services,2033,8,,9
+J-Information and communication,2034,9,,10
+K-Financial activities,2035,10,,11
+L-Real estate activities,2036,11,,12
+"M-Professional, scientific and technical activities",2037,12,,13
+N-Administrative services activities,2038,13,,14
+O-Public administration and defence,2039,14,,15
+P-Education,2040,15,,16
+Q-Health and social work,,16,,17
+"R-Arts, entertainment and recreation",,17,,18
+S-Other service activities,,18,,19
+T-Activities of households,,19,,20
+U-Activities of organizations and bodies,,20,,21
+Z-Other,,21,,22
+,,22,,23
+,,23,,24
+,,24,,25
+,,25,,26
+,,26,,27
+,,27,,28
+,,28,,29
+,,29,,30
+,,30,,33
+,,33,,36
+,,36,,38
+,,38,,40
+,,40,,32
+,,32,,35
+,,35,,36
+,,36,,37
+,,37,,38
+,,38,,39
+,,39,,40
+,,40,,41
+,,41,,42
+,,42,,43
+,,43,,44
+,,44,,45
+,,45,,46
+,,46,,47
+,,47,,48
+,,48,,49
+,,49,,50
+,,50,,
