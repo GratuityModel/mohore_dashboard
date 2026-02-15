@@ -269,7 +269,7 @@ def run_economic_layer(industry_year_df, economic_file, leakage_rate):
 
     df["Jobs_Impact"] = (
         df["Employment_Multiplier (jobs per AED 1M output)"]
-        * (df["Domestic_Investable"])
+        * (df["Domestic_Investable"]/ 1_000_000)
     )
 
     return df
@@ -360,16 +360,20 @@ with st.sidebar:
         st.session_state.industry_assumptions["Industry"] == selected_industry
     ]
 
+    age_options = ["All"] + sorted(industry_df["Age_Bracket"].unique())
+
     selected_age = st.selectbox(
         "Age Bracket",
-        sorted(industry_df["Age_Bracket"].unique())
+        age_options
     )
 
-    row_idx = industry_df[
-        industry_df["Age_Bracket"] == selected_age
-    ].index[0]
-
-    row = st.session_state.industry_assumptions.loc[row_idx]
+    if selected_age != "All":
+        row_idx = industry_df[
+            industry_df["Age_Bracket"] == selected_age
+        ].index[0]
+        row = st.session_state.industry_assumptions.loc[row_idx]
+    else:
+        row = industry_df.mean(numeric_only=True)
 
     st.markdown("### Editable Rates")
 
@@ -401,14 +405,30 @@ with st.sidebar:
 
         df = st.session_state.industry_assumptions
 
-        df.loc[row_idx, [
-            "Expansion Hiring %",
-            "Replacement Hiring %",
-            "Attrition %",
-            "Retirement Rate",
-            "Death Rate",
-            "Salary Growth %"
-        ]] = [exp, rep, attr, ret, death, sal_g]
+        if selected_age != "All":
+
+            df.loc[row_idx, [
+                "Expansion Hiring %",
+                "Replacement Hiring %",
+                "Attrition %",
+                "Retirement Rate",
+                "Death Rate",
+                "Salary Growth %"
+            ]] = [exp, rep, attr, ret, death, sal_g]
+
+        else:
+            df.loc[
+                df["Industry"] == selected_industry,
+                [
+                    "Expansion Hiring %",
+                    "Replacement Hiring %",
+                    "Attrition %",
+                    "Retirement Rate",
+                    "Death Rate",
+                    "Salary Growth %"
+                ]
+            ] = [exp, rep, attr, ret, death, sal_g]
+
 
         df["Total Hiring %"] = (
             df["Expansion Hiring %"] +
@@ -511,7 +531,7 @@ eco_baseline = impact_static[
 
 eco_baseline["Output_Bn"] = eco_baseline["Output_Impact"] / 1_000_000_000
 eco_baseline["GVA_Bn"] = eco_baseline["GVA_Impact"] / 1_000_000_000
-eco_baseline["Jobs_Mn"] = eco_baseline["Jobs_Impact"] / 1_000
+eco_baseline["Jobs_K"] = eco_baseline["Jobs_Impact"] / 1_000
 
 col1, col2, col3 = st.columns(3)
 
@@ -573,7 +593,7 @@ col2.plotly_chart(fig_gva, use_container_width=True)
 fig_jobs = px.pie(
     eco_baseline,
     names="SectorMap",
-    values="Jobs_Mn",
+    values="Jobs_K",
     hole=0.65,
     color_discrete_sequence=px.colors.sequential.Oranges
 )
@@ -610,10 +630,18 @@ combined_full, industry_full, impact_full = run_full_engine(
 selected_industry_lower = selected_industry.lower()
 selected_age_lower = selected_age.lower()
 
-combined_dyn = combined_full[
-    (combined_full["industry"] == selected_industry_lower) &
-    (combined_full["age_bucket"] == selected_age_lower)
-]
+if selected_age != "All":
+
+    combined_dyn = combined_full[
+        (combined_full["industry"] == selected_industry_lower) &
+        (combined_full["age_bucket"] == selected_age_lower)
+    ]
+
+else:
+    combined_dyn = combined_full[
+        combined_full["industry"] == selected_industry_lower
+    ]
+
 
 industry_dyn = aggregate_industry_year(combined_dyn)
 
@@ -648,21 +676,21 @@ tabs = st.tabs([
 with tabs[0]:
 
     jobs_df = impact_dyn.groupby("year")["Jobs_Impact"].sum().reset_index()
-    jobs_df["Jobs_Mn"] = jobs_df["Jobs_Impact"] / 1_000_000
+    jobs_df["Jobs_K"] = jobs_df["Jobs_Impact"] / 1_000
 
     fig = go.Figure()
 
     fig.add_trace(go.Bar(
         x=jobs_df["year"],
-        y=jobs_df["Jobs_Mn"],
+        y=jobs_df["Jobs_K"],
         marker_color="#0b3d91",
-        text=[f"{v:.2f}M" for v in jobs_df["Jobs_Mn"]],
+        text=[f"{v:.2f}K" for v in jobs_df["Jobs_K"]],
         textposition="outside"
     ))
 
     fig.update_layout(
         template="plotly_white",
-        yaxis_title="Jobs Impact (Million)"
+        yaxis_title="Jobs Impact (Thousand)"
     )
 
     st.plotly_chart(fig, use_container_width=True)
@@ -739,7 +767,7 @@ with tabs[2]:
 
     eco["Output_Bn"] = eco["Output_Impact"] / 1_000_000
     eco["GVA_Bn"] = eco["GVA_Impact"] / 1_000_000
-    eco["Jobs_Mn"] = eco["Jobs_Impact"] / 1_000
+    eco["Jobs_K"] = eco["Jobs_Impact"] / 1_000
 
     c1, c2, c3 = st.columns(3)
 
@@ -773,7 +801,7 @@ with tabs[2]:
         px.pie(
             eco,
             names="SectorMap",
-            values="Jobs_Mn",
+            values="Jobs_K",
             hole=0.5,
             color_discrete_sequence=px.colors.qualitative.Pastel
         ).update_traces(
