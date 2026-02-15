@@ -482,20 +482,29 @@ st.markdown("## 🌍 Global Baseline Overview (Policy Scenario)")
 # Year Filter (Baseline Only)
 # -----------------------------------------
 
+year_options = ["All"] + sorted(industry_static["year"].unique())
+
 baseline_year = st.selectbox(
     "Select Year (Baseline Scenario)",
-    sorted(industry_static["year"].unique()),
+    year_options,
     key="baseline_year_filter"
 )
 
 # Filter static data for selected year
-industry_static_year = industry_static[
-    industry_static["year"] == baseline_year
-]
+if baseline_year == "All":
 
-impact_static_year = impact_static[
-    impact_static["year"] == baseline_year
-]
+    industry_static_year = industry_static.copy()
+    impact_static_year = impact_static.copy()
+
+else:
+
+    industry_static_year = industry_static[
+        industry_static["year"] == baseline_year
+    ]
+
+    impact_static_year = impact_static[
+        impact_static["year"] == baseline_year
+    ]
 
 # -----------------------------------------
 # KPI GRID (YEAR-SPECIFIC)
@@ -525,14 +534,28 @@ c6.metric("Output Impact (Bn)",
 
 st.markdown("## 🌍 Full Economy Structure")
 
-eco_baseline = impact_static[
-    impact_static["year"] == baseline_year
-].copy()
+if baseline_year == "All":
+
+    eco_baseline = impact_static.copy()
+
+    # Aggregate across all years by Sector
+    eco_baseline = eco_baseline.groupby("SectorMap").agg({
+        "Output_Impact": "sum",
+        "GVA_Impact": "sum",
+        "Jobs_Impact": "sum"
+    }).reset_index()
+
+else:
+
+    eco_baseline = impact_static[
+        impact_static["year"] == baseline_year
+    ].copy()
 
 # Convert units
 eco_baseline["Output_Bn"] = eco_baseline["Output_Impact"] / 1_000_000_000
 eco_baseline["GVA_Bn"] = eco_baseline["GVA_Impact"] / 1_000_000_000
 eco_baseline["Jobs_K"] = eco_baseline["Jobs_Impact"] / 1_000
+
 
 # Aggregate by Sector
 eco_grouped = eco_baseline.groupby("SectorMap").agg({
@@ -595,6 +618,112 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+
+st.markdown("### 📈 Evolution Over Years (Selected Sectors)")
+
+# ---------------------------------------------
+# Sector Filter (same categories as bar chart)
+# ---------------------------------------------
+
+sector_options = sorted(impact_static["SectorMap"].unique())
+
+selected_sectors = st.multiselect(
+    "Select Sectors",
+    sector_options,
+    default=sector_options
+)
+
+evo_df = impact_static[
+    impact_static["SectorMap"].isin(selected_sectors)
+].copy()
+
+# Convert units
+evo_df["Output_Bn"] = evo_df["Output_Impact"] / 1_000_000_000
+evo_df["GVA_Bn"] = evo_df["GVA_Impact"] / 1_000_000_000
+evo_df["Jobs_K"] = evo_df["Jobs_Impact"] / 1_000
+
+# Aggregate by Year
+evo_year = evo_df.groupby("year").agg({
+    "Output_Bn": "sum",
+    "GVA_Bn": "sum",
+    "Jobs_K": "sum"
+}).reset_index()
+
+# ---------------------------------------------
+# Line Chart
+# ---------------------------------------------
+
+fig_evo = go.Figure()
+
+# Output
+fig_evo.add_trace(go.Scatter(
+    x=evo_year["year"],
+    y=evo_year["Output_Bn"],
+    name="Output (Bn)",
+    mode="lines+markers",
+    line=dict(color="#1f77b4", width=3)
+))
+
+# GVA
+fig_evo.add_trace(go.Scatter(
+    x=evo_year["year"],
+    y=evo_year["GVA_Bn"],
+    name="GVA (Bn)",
+    mode="lines+markers",
+    line=dict(color="#2ca02c", width=3)
+))
+
+# Jobs – Bar on secondary axis
+fig_evo.add_trace(go.Bar(
+    x=evo_year["year"],
+    y=evo_year["Jobs_K"],
+    name="Jobs (K)",
+    marker_color="#ff7f0e",
+    yaxis="y2",
+    opacity=0.4
+))
+
+fig_evo.update_layout(
+    template=None,   # 🔥 disable plotly theme
+    paper_bgcolor="white",
+    plot_bgcolor="white",
+
+    xaxis=dict(
+        showgrid=False,
+        showline=True,
+        linecolor="black",
+        mirror=True
+    ),
+
+    yaxis=dict(
+        title="Impact (Bn)",
+        showgrid=False,
+        showline=True,
+        linecolor="black",
+        mirror=True
+    ),
+
+    yaxis2=dict(
+        title="Jobs (Thousand)",
+        overlaying="y",
+        side="right",
+        showgrid=False,
+        showline=True,
+        linecolor="black"
+    ),
+
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    ),
+
+    height=500
+)
+
+st.plotly_chart(fig_evo, use_container_width=True)
 
 
 # ==========================================================
