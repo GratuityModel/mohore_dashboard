@@ -53,7 +53,7 @@ div[data-baseweb="popover"] li {
 }
 
 div[data-baseweb="popover"] li:hover {
-    background-color: #f2f2f2 !important;
+    background-color: #EFD59B !important;
 }
 
 /* ============================= */
@@ -62,7 +62,7 @@ div[data-baseweb="popover"] li:hover {
 
 [data-testid="stNumberInput"] > div {
     background-color: #ffffff !important;
-    border: 1px solid #cccccc !important;
+    border: 1px solid #77878C !important;
     border-radius: 6px !important;
 }
 
@@ -194,14 +194,28 @@ html, body, [class*="css"] { color: #000000 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 UAE -  Mandatory Gratuity  Savings - Funding & Economic Impact analysis \n for Private Expatriate employees")
+st.title("UAE - Mandatory Gratuity Savings - Funding & Economic Impact Analysis")
+
+st.markdown(
+    """
+    <div style="
+        font-size:28px;
+        font-weight:700;
+        color:#053048;
+        margin-top:-10px;">
+        For Private Expatriate Employees
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 
 main_col, calc_col = st.columns([3,1])
 
 
 with calc_col:
 
-    st.markdown("## 🧮 EOSG Static Calculator")
+    st.markdown("## Employee Benefit Calculator")
 
     # ---------------------------------
     # Salary Inputs
@@ -297,14 +311,64 @@ with calc_col:
     # Outputs
     # ---------------------------------
 
-    st.metric("Unfunded Gratuity",
-              f"{gratuity_unfunded:,.0f}")
+    st.markdown("### EOS Summary")
 
-    st.metric("Funded Value",
-              f"{gratuity_funded:,.0f}")
+    m1, m2, m3 = st.columns(3)
 
-    st.metric("Funding Gap",
-              f"{funding_gap:,.0f}")
+    with m1:
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#ffffff;
+                padding:20px;
+                border-radius:12px;
+                text-align:center;
+                border:1px solid #BDD4E7;">
+                <div style="font-size:14px; color:#77878C;">Unfunded EOS</div>
+                <div style="font-size:28px; font-weight:700; color:#053048;">
+                    {gratuity_unfunded:,.0f}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with m2:
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#ffffff;
+                padding:20px;
+                border-radius:12px;
+                text-align:center;
+                border:1px solid #BDD4E7;">
+                <div style="font-size:14px; color:#77878C;">Funded EOS</div>
+                <div style="font-size:28px; font-weight:700; color:#053048;">
+                    {gratuity_funded:,.0f}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with m3:
+        st.markdown(
+            f"""
+            <div style="
+                background-color:#F5B71820;
+                padding:20px;
+                border-radius:12px;
+                text-align:center;
+                border:1px solid #F5B718;">
+                <div style="font-size:14px; color:#77878C;">Return Differential</div>
+                <div style="font-size:28px; font-weight:700; color:#053048;">
+                    {funding_gap:,.0f}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
 
 
 with main_col:
@@ -591,7 +655,7 @@ with main_col:
             st.success("Assumptions Updated ✔")
 
         st.markdown("---")
-        st.header("🌍 Global Controls")
+        st.header("Global Controls")
 
         fund_return = st.slider(
             "Fund Return %",
@@ -618,13 +682,14 @@ with main_col:
     # GLOBAL BASELINE SUMMARY
     # ==========================================================
 
-    st.markdown("## 🌍 Global Baseline Overview (Policy Scenario)")
+    st.markdown("## Global Baseline Overview (Policy Scenario)")
 
     # -----------------------------------------
     # Year Filter (Baseline Only)
     # -----------------------------------------
 
-    year_options = ["All"] + sorted(industry_static["year"].unique())
+    year_options = ["2026-2040"] + sorted(industry_static["year"].dropna().astype(int).unique())
+    
 
     baseline_year = st.selectbox(
         "Select Year (Baseline Scenario)",
@@ -633,7 +698,7 @@ with main_col:
     )
 
     # Filter static data for selected year
-    if baseline_year == "All":
+    if baseline_year == "2026-2040":
 
         industry_static_year = industry_static.copy()
         impact_static_year = impact_static.copy()
@@ -674,9 +739,9 @@ with main_col:
             f"{impact_static_year['Output_Impact'].sum()/1e9:.2f}")
 
 
-    st.markdown("## 🌍 Full Economy Structure")
+    st.markdown("## Full Economy Structure")
 
-    if baseline_year == "All":
+    if baseline_year == "2026-2040":
 
         eco_baseline = impact_static.copy()
 
@@ -715,7 +780,7 @@ with main_col:
         x=eco_grouped["SectorMap"],
         y=eco_grouped["Output_Bn"],
         name="Output Impact (Bn)",
-        marker_color="#1f77b4"
+        marker_color="#053048"
     ))
 
     # ----------------------------------
@@ -725,7 +790,7 @@ with main_col:
         x=eco_grouped["SectorMap"],
         y=eco_grouped["GVA_Bn"],
         name="GVA Impact (Bn)",
-        marker_color="#2ca02c"
+        marker_color="#8BAAAD"
     ))
 
     # ----------------------------------
@@ -737,7 +802,7 @@ with main_col:
         name="Jobs Impact (Thousand)",
         mode="lines+markers",
         yaxis="y2",
-        marker=dict(color="#ff7f0e", size=8),
+        marker=dict(color="#F5B718", size=8),
         line=dict(width=3)
     ))
 
@@ -761,7 +826,7 @@ with main_col:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### 📈 Evolution Over Years (Selected Sectors)")
+    st.markdown("### Economic Impact Progression")
 
     # ---------------------------------------------
     # Sector Filter (same categories as bar chart)
@@ -803,7 +868,7 @@ with main_col:
         y=evo_year["Output_Bn"],
         name="Output (Bn)",
         mode="lines+markers",
-        line=dict(color="#1f77b4", width=3)
+        line=dict(color="#053048", width=3)
     ))
 
     # GVA
@@ -812,7 +877,7 @@ with main_col:
         y=evo_year["GVA_Bn"],
         name="GVA (Bn)",
         mode="lines+markers",
-        line=dict(color="#2ca02c", width=3)
+        line=dict(color="#8BAAAD", width=3)
     ))
 
     # Jobs – Bar on secondary axis
@@ -820,7 +885,7 @@ with main_col:
         x=evo_year["year"],
         y=evo_year["Jobs_K"],
         name="Jobs (K)",
-        marker_color="#ff7f0e",
+        marker_color="#F5B718",
         yaxis="y2",
         opacity=0.4
     ))
@@ -915,8 +980,8 @@ with main_col:
     st.markdown("## ⚙ Scenario Analysis")
 
     tabs = st.tabs([
-        "Jobs Impact",
-        "Fund Risk",
+        "Job Impact",
+        "Fund Growth",
         "Economic",
         "EOSG & Payroll",
         "Individual Benefit"
@@ -936,7 +1001,7 @@ with main_col:
         fig.add_trace(go.Bar(
             x=jobs_df["year"],
             y=jobs_df["Jobs_K"],
-            marker_color="#0b3d91",
+            marker_color="#053048",
             text=[f"{v:.2f}K" for v in jobs_df["Jobs_K"]],
             textposition="outside"
         ))
@@ -958,7 +1023,7 @@ with main_col:
         comparison_rates = [0.04, 0.08, 0.11]
 
         for r, color in zip(comparison_rates,
-                            ["#1f77b4","#2ca02c","#ff7f0e"]):
+                            ["#053048","#8BAAAD","#F5B718"]):
 
             _, ind_tmp, _ = run_full_engine(
                 st.session_state.industry_assumptions,
@@ -992,7 +1057,7 @@ with main_col:
             x=selected_industry["year"],
             y=selected_industry["closing_fund_with_return"]/1e9,
             name="Selected Scenario",
-            line=dict(color="#d62728", width=4)
+            line=dict(color="#93838E", width=4)
         ))
 
         fig.update_layout(
@@ -1002,67 +1067,134 @@ with main_col:
 
         st.plotly_chart(fig, use_container_width=True)
 
+    # ==========================================================
     # Economic
+    # ==========================================================
+
+    # ==========================================================
+    # Economic
+    # ==========================================================
+
     with tabs[2]:
 
-        st.markdown("### Economic Impact (Scenario Driven) - All industry Groups Included")
+        st.markdown("### Economic Impact (Scenario Driven) - All Industry Groups Included")
 
+
+        year_options = sorted(impact_full["year"].dropna().astype(int).unique())
         economic_year = st.selectbox(
             "Select Year",
-            sorted(impact_full["year"].unique()),
+            year_options,
             key="economic_tab_year"
         )
 
-        # 🔥 Use FULL impact (no industry filter)
         eco = impact_full[
             impact_full["year"] == economic_year
         ].copy()
 
-        eco["Output_Bn"] = eco["Output_Impact"] / 1_000_000
-        eco["GVA_Bn"] = eco["GVA_Impact"] / 1_000_000
+        # Unit Conversions
+        eco["Output_Mn"] = eco["Output_Impact"] / 1_000_000
+        eco["GVA_Mn"] = eco["GVA_Impact"] / 1_000_000
         eco["Jobs_K"] = eco["Jobs_Impact"] / 1_000
+
+        # Brand Color Sequence
+        brand_colors = [
+            "#053048",
+            "#F5B718",
+            "#BDD4E7",
+            "#EFD59B",
+            "#8BAAAD",
+            "#77878C",
+            "#93838E"
+        ]
 
         c1, c2, c3 = st.columns(3)
 
-        c1.plotly_chart(
-            px.pie(
-                eco,
-                names="SectorMap",
-                values="Output_Bn",
-                hole=0.5,
-                color_discrete_sequence=px.colors.qualitative.Set2
-            ).update_traces(
-                texttemplate="%{value:.2f} Mn"
-            ).update_layout(template="plotly_white"),
-            use_container_width=True
+        # ======================================================
+        # OUTPUT IMPACT
+        # ======================================================
+
+        fig_output = px.pie(
+            eco,
+            names="SectorMap",
+            values="Output_Mn",
+            hole=0.55,
+            color_discrete_sequence=brand_colors,
+            title="Output Impact by Sector (Million)"
         )
 
-        c2.plotly_chart(
-            px.pie(
-                eco,
-                names="SectorMap",
-                values="GVA_Bn",
-                hole=0.5,
-                color_discrete_sequence=px.colors.qualitative.Set3
-            ).update_traces(
-                texttemplate="%{value:.2f} Mn"
-            ).update_layout(template="plotly_white"),
-            use_container_width=True
+        fig_output.update_traces(
+            texttemplate="%{value:.2f} Mn",
+            textposition="outside",
+            textfont=dict(color="#053048", size=13)
         )
 
-        c3.plotly_chart(
-            px.pie(
-                eco,
-                names="SectorMap",
-                values="Jobs_K",
-                hole=0.5,
-                color_discrete_sequence=px.colors.qualitative.Pastel
-            ).update_traces(
-                texttemplate="%{value:.2f} K"
-            ).update_layout(template="plotly_white"),
-            use_container_width=True
+        fig_output.update_layout(
+            template="plotly_white",
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            title_font=dict(size=18, color="#053048"),
+            legend=dict(font=dict(color="#053048"))
         )
 
+        c1.plotly_chart(fig_output, use_container_width=True)
+
+        # ======================================================
+        # GVA IMPACT
+        # ======================================================
+
+        fig_gva = px.pie(
+            eco,
+            names="SectorMap",
+            values="GVA_Mn",
+            hole=0.55,
+            color_discrete_sequence=brand_colors,
+            title="GVA Impact by Sector (Million)"
+        )
+
+        fig_gva.update_traces(
+            texttemplate="%{value:.2f} Mn",
+            textposition="outside",
+            textfont=dict(color="#053048", size=13)
+        )
+
+        fig_gva.update_layout(
+            template="plotly_white",
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            title_font=dict(size=18, color="#053048"),
+            legend=dict(font=dict(color="#053048"))
+        )
+
+        c2.plotly_chart(fig_gva, use_container_width=True)
+
+        # ======================================================
+        # EMPLOYMENT IMPACT
+        # ======================================================
+
+        fig_jobs = px.pie(
+            eco,
+            names="SectorMap",
+            values="Jobs_K",
+            hole=0.55,
+            color_discrete_sequence=brand_colors,
+            title="Employment Impact by Sector (Thousand Jobs)"
+        )
+
+        fig_jobs.update_traces(
+            texttemplate="%{value:.2f} K",
+            textposition="outside",
+            textfont=dict(color="#053048", size=13)
+        )
+
+        fig_jobs.update_layout(
+            template="plotly_white",
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            title_font=dict(size=18, color="#053048"),
+            legend=dict(font=dict(color="#053048"))
+        )
+
+        c3.plotly_chart(fig_jobs, use_container_width=True)
 
 
     # EOSG & Payroll
@@ -1082,7 +1214,7 @@ with main_col:
             x=compare["year"],
             y=compare["annual_total_salary"] / 1e9,
             name="Payroll",
-            marker_color="#9ecae1",  # light blue
+            marker_color="#BDD4E7",  # light blue
             yaxis="y2"
         ))
 
@@ -1094,7 +1226,7 @@ with main_col:
             y=compare["closing_fund_with_return"] / 1e9,
             name="Fund",
             mode="lines+markers",
-            line=dict(color="#90EE90", width=4),  # green
+            line=dict(color="#EFD59B", width=4),  # green
             marker=dict(size=7)
         ))
 
@@ -1148,3 +1280,16 @@ with main_col:
             c1, c2 = st.columns(2)
             c1.metric("No Return", f"{avg_no:,.0f}")
             c2.metric("With Return", f"{avg_wr:,.0f}")
+
+st.markdown(
+    """
+    <div style="
+        text-align:center;
+        font-size:20px;
+        color:#77878C;
+        margin-top:8px;">
+        * All currency values are expressed in AED (United Arab Emirates Dirham).
+    </div>
+    """,
+    unsafe_allow_html=True
+)
