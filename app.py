@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pipeline import *
+from PIL import Image
 
 # ==========================================================
 # CONFIG
@@ -194,16 +195,36 @@ html, body, [class*="css"] { color: #000000 !important; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("UAE - Mandatory Gratuity Savings - Funding & Economic Impact Analysis")
+header_col1, header_col2 = st.columns([6, 1])
+
+with header_col2:
+    logo = Image.open("data/Synarchy_Primary_Logo - Blue Synarchy.png")
+    st.image(logo, width=180)
+
+with header_col1:
+    st.title("UAE - Mandatory Gratuity Savings - Funding & Economic Impact Analysis")
+
+    st.markdown(
+        """
+        <div style="
+            font-size:28px;
+            font-weight:700;
+            color:#053048;
+            margin-top:-10px;">
+            For Private Expatriate Employees
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 st.markdown(
     """
     <div style="
-        font-size:28px;
-        font-weight:700;
-        color:#053048;
-        margin-top:-10px;">
-        For Private Expatriate Employees
+        text-align:left;
+        font-size:12px;
+        color:#000000;
+        margin-top:8px;">
+        * All currency values are expressed in AED (United Arab Emirates Dirham).
     </div>
     """,
     unsafe_allow_html=True
@@ -315,17 +336,36 @@ with calc_col:
 
     m1, m2, m3 = st.columns(3)
 
+    card_style = """
+        height:150px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        align-items:center;
+        background-color:#ffffff;
+        border-radius:12px;
+        border:1px solid #BDD4E7;
+        padding:10px;
+    """
+
+    highlight_style = """
+        height:150px;
+        display:flex;
+        flex-direction:column;
+        justify-content:center;
+        align-items:center;
+        background-color:#F5B71820;
+        border-radius:12px;
+        border:1px solid #F5B718;
+        padding:10px;
+    """
+
     with m1:
         st.markdown(
             f"""
-            <div style="
-                background-color:#ffffff;
-                padding:20px;
-                border-radius:12px;
-                text-align:center;
-                border:1px solid #BDD4E7;">
+            <div style="{card_style}">
                 <div style="font-size:14px; color:#77878C;">Unfunded EOS</div>
-                <div style="font-size:28px; font-weight:700; color:#053048;">
+                <div style="font-size:30px; font-weight:700; color:#053048;">
                     {gratuity_unfunded:,.0f}
                 </div>
             </div>
@@ -336,14 +376,9 @@ with calc_col:
     with m2:
         st.markdown(
             f"""
-            <div style="
-                background-color:#ffffff;
-                padding:20px;
-                border-radius:12px;
-                text-align:center;
-                border:1px solid #BDD4E7;">
+            <div style="{card_style}">
                 <div style="font-size:14px; color:#77878C;">Funded EOS</div>
-                <div style="font-size:28px; font-weight:700; color:#053048;">
+                <div style="font-size:30px; font-weight:700; color:#053048;">
                     {gratuity_funded:,.0f}
                 </div>
             </div>
@@ -354,20 +389,16 @@ with calc_col:
     with m3:
         st.markdown(
             f"""
-            <div style="
-                background-color:#F5B71820;
-                padding:20px;
-                border-radius:12px;
-                text-align:center;
-                border:1px solid #F5B718;">
+            <div style="{highlight_style}">
                 <div style="font-size:14px; color:#77878C;">Return Differential</div>
-                <div style="font-size:28px; font-weight:700; color:#053048;">
+                <div style="font-size:30px; font-weight:700; color:#053048;">
                     {funding_gap:,.0f}
                 </div>
             </div>
             """,
             unsafe_allow_html=True
         )
+
 
 
 
@@ -581,7 +612,7 @@ with main_col:
         else:
             row = industry_df.mean(numeric_only=True)
 
-        st.markdown("### Editable Rates")
+        st.markdown("### Input Parameters")
 
         exp = st.number_input("Expansion Hiring %",
                             0.0, 1.0,
