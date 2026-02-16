@@ -198,6 +198,12 @@ html, body, [class*="css"] { color: #000000 !important; }
 header_col1, header_col2 = st.columns([6, 1])
 
 with header_col2:
+    st.markdown(
+        """
+        <div style="margin-top:35px;">
+        """,
+        unsafe_allow_html=True
+    )
     logo = Image.open("data/Synarchy_Primary_Logo - Blue Synarchy.png")
     st.image(logo, width=180)
 
@@ -1324,3 +1330,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
