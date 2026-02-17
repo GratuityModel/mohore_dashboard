@@ -86,8 +86,6 @@ def generate_merged_industry_data(
     )
 
     merged_df['Attrition %'] += 0.005
-    merged_df['Retirement Rate'] += 0.005
-    merged_df['Death Rate'] += 0.005
 
     merged_df['Total Exit (q)'] = (
         merged_df['Retirement Rate'] +
@@ -932,4 +930,5 @@ def apply_economic_impact(
     )
 
     return df
+
 
