@@ -732,10 +732,7 @@ def generate_combined_employee_full_calculation(
     final_df["closing_fund_with_return"] = 0.0
 
 
-    final_df["tenure_start"] = (
-        final_df.groupby(["industry", "age_bucket"])["tenure"]
-        .transform("min")
-    )
+    final_df["tenure_start"] = final_df["year"] - final_df["tenure"]
 
     for (ind, age, cohort), group in final_df.groupby(
         ["industry", "age_bucket", "tenure_start"]):
@@ -930,6 +927,7 @@ def apply_economic_impact(
     )
 
     return df
+
 
 
 
