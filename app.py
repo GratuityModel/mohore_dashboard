@@ -198,13 +198,7 @@ html, body, [class*="css"] { color: #000000 !important; }
 header_col1, header_col2 = st.columns([6, 1])
 
 with header_col2:
-    st.markdown(
-        """
-        <div style="margin-top:35px;">
-        """,
-        unsafe_allow_html=True
-    )
-    logo = Image.open("data/Synarchy_Primary_Logo - Blue Synarchy.png")
+    logo = Image.open("APP/data/Synarchy_Primary_Logo - Blue Synarchy.png")
     st.image(logo, width=180)
 
 with header_col1:
@@ -440,13 +434,10 @@ with main_col:
     # ==========================================================
 
     @st.cache_data
-    def load_templates():
-        return (
-            generate_new_employee_survival_template(META_INFO),
-            generate_old_employee_survival_template(META_INFO)
-        )
+    def load_template():
+        return generate_combined_employee_survival_template(META_INFO)
 
-    new_template, old_template = load_templates()
+    survival_template = load_template()
 
 
     # ==========================================================
@@ -525,8 +516,8 @@ with main_col:
 
     @st.cache_data
     def run_full_engine(industry_assumptions,
-                        fund_return,
-                        leakage_rate):
+                    fund_return,
+                    leakage_rate):
 
         # Employee forecast
         emp_forecast, sal_forecast = generate_employee_salary_forecast(
@@ -534,36 +525,22 @@ with main_col:
             industry_assumptions
         )
 
-        # Survival templates
-        new_surv, old_surv = attach_exit_rates(
+        # Attach exit rates to unified template
+        survival_with_rates, _ = attach_exit_rates(
             industry_assumptions,
-            new_template,
-            old_template
+            new_survival_df=survival_template
         )
 
-        # Fund layer
-        new_final = generate_new_employee_full_calculation(
-            new_surv,
+        # Combined unified engine
+        combined_df = generate_combined_employee_full_calculation(
+            survival_with_rates,
             emp_forecast,
             sal_forecast,
             fund_return
-        )
-
-        old_final = generate_old_employee_full_calculation(
-            old_surv,
-            emp_forecast,
-            sal_forecast,
-            fund_return
-        )
-
-        combined_df, _ = combine_new_old_results(
-            new_final,
-            old_final
         )
 
         industry_year = aggregate_industry_year(combined_df)
 
-        # Economic layer (SectorMap)
         impact_df = run_economic_layer(
             industry_year,
             ECONOMIC_FILE,
@@ -584,6 +561,7 @@ with main_col:
         ]
 
         return combined_df, industry_year, impact_df
+
 
 
     # ==========================================================
@@ -1330,4 +1308,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
