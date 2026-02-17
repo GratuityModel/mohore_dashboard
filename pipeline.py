@@ -704,7 +704,7 @@ def generate_combined_employee_full_calculation(
     )
 
     final_df["prev_gratuity_per_employee"] = final_df.groupby(
-        ["industry", "age_bucket", "tenure"]
+        ["industry", "age_bucket", "tenure_start"]
     )["gratuity_per_employee"].shift(1)
 
     final_df["fund_contribution"] = np.where(
@@ -930,5 +930,6 @@ def apply_economic_impact(
     )
 
     return df
+
 
 
