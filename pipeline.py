@@ -86,6 +86,8 @@ def generate_merged_industry_data(
     )
 
     merged_df['Attrition %'] += 0.005
+    
+    
 
     merged_df['Total Exit (q)'] = (
         merged_df['Retirement Rate'] +
@@ -699,19 +701,26 @@ def generate_combined_employee_full_calculation(
     # ==========================================================
     # 7️⃣ FUND CONTRIBUTION (UNCHANGED)
     # ==========================================================
+
+        # Create diagonal cohort key
+    final_df["tenure_start"] = final_df["year"] - final_df["tenure"]
+
+    # Sort by cohort path
     final_df = final_df.sort_values(
-        ["industry", "age_bucket", "year", "tenure"]
+        ["industry", "age_bucket", "tenure_start", "year"]
     )
 
+    # Rolling gratuity within cohort
     final_df["prev_gratuity_per_employee"] = final_df.groupby(
         ["industry", "age_bucket", "tenure_start"]
     )["gratuity_per_employee"].shift(1)
 
+    # Contribution calculation
     final_df["fund_contribution"] = np.where(
         final_df["prev_gratuity_per_employee"].isna(),
         final_df["gratuity_per_employee"] * final_df["survived_employee"],
         (final_df["gratuity_per_employee"]
-         - final_df["prev_gratuity_per_employee"])
+        - final_df["prev_gratuity_per_employee"])
         * final_df["survived_employee"]
     )
 
@@ -732,7 +741,7 @@ def generate_combined_employee_full_calculation(
     final_df["closing_fund_with_return"] = 0.0
 
 
-    final_df["tenure_start"] = final_df["year"] - final_df["tenure"]
+    
 
     for (ind, age, cohort), group in final_df.groupby(
         ["industry", "age_bucket", "tenure_start"]):
@@ -927,7 +936,3 @@ def apply_economic_impact(
     )
 
     return df
-
-
-
-
