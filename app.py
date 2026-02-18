@@ -408,11 +408,11 @@ with main_col:
     # FILES
     # ==========================================================
 
-    INDUSTRY_DESC = "data\\Industry Desc.xlsx"
-    INDUSTRY_RATES = "data\\P2 Industry rates.xlsx"
-    EMPLOYEE_SALARY = "data\\Employee_Salary_Data_2025.xlsx"
-    META_INFO = "data\\Meta_info.csv"
-    ECONOMIC_FILE = "data\\Economic Parameters.xlsx"
+    INDUSTRY_DESC = "data/Industry Desc.xlsx"
+    INDUSTRY_RATES = "data/P2 Industry rates.xlsx"
+    EMPLOYEE_SALARY = "data/Employee_Salary_Data_2025.xlsx"
+    META_INFO = "data/Meta_info.csv"
+    ECONOMIC_FILE = "data/Economic Parameters.xlsx"
 
     # ==========================================================
     # LOAD BASE DATA
@@ -1604,4 +1604,5 @@ with main_col:
             """
         )
     
+
 
