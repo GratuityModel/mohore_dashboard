@@ -1,8 +1,9 @@
+from altair import value
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -407,11 +408,11 @@ with main_col:
     # FILES
     # ==========================================================
 
-    INDUSTRY_DESC = "data/Industry Desc.xlsx"
-    INDUSTRY_RATES = "data/P2 Industry rates.xlsx"
-    EMPLOYEE_SALARY = "data/Employee_Salary_Data_2025.xlsx"
-    META_INFO = "data/Meta_info.csv"
-    ECONOMIC_FILE = "data/Economic Parameters.xlsx"
+    INDUSTRY_DESC = "data\\Industry Desc.xlsx"
+    INDUSTRY_RATES = "data\\P2 Industry rates.xlsx"
+    EMPLOYEE_SALARY = "data\\Employee_Salary_Data_2025.xlsx"
+    META_INFO = "data\\Meta_info.csv"
+    ECONOMIC_FILE = "data\\Economic Parameters.xlsx"
 
     # ==========================================================
     # LOAD BASE DATA
@@ -1018,7 +1019,7 @@ with main_col:
     st.plotly_chart(fig_evo, use_container_width=True)
 
 
-
+    print(st.session_state.industry_assumptions.equals(merged_df))
     # ==========================================================
     # DYNAMIC SCENARIO (FULL ENGINE RUN ONCE, CACHED)
     # ==========================================================
@@ -1045,51 +1046,38 @@ with main_col:
 
     combined_full, industry_full, impact_full = st.session_state.dynamic_engine_cache[engine_key]
 
+    if "fund_scenarios_cache" not in st.session_state:
+        st.session_state.fund_scenarios_cache = {}
 
-    # Filtered data for selected industry + age
+    if engine_key not in st.session_state.fund_scenarios_cache:
+        st.session_state.fund_scenarios_cache[engine_key] = \
+            generate_cohort_fund_scenarios(combined_full)
+
+    fund_scenarios_full = st.session_state.fund_scenarios_cache[engine_key]
     selected_industry_lower = selected_industry.lower()
+    
     selected_age_lower = selected_age.lower()
 
+
+    # Employee-level (has age)
+    combined_dyn = combined_full[
+        combined_full["industry"] == selected_industry_lower
+    ].copy()
+
+    # Industry-level aggregates (NO age dimension)
+    industry_dyn = industry_full[
+        industry_full["industry"] == selected_industry_lower
+    ].copy()
+
+    impact_dyn = impact_full[
+        impact_full["industry"] == selected_industry_lower
+    ].copy()
+
+    # Apply age filter ONLY to employee-level data
     if selected_age != "All":
-
-        combined_dyn = combined_full[
-            (combined_full["industry"] == selected_industry_lower) &
-            (combined_full["age_bracket"] == selected_age_lower)
+        combined_dyn = combined_dyn[
+            combined_dyn["age_bracket"] == selected_age.lower()
         ]
-
-    else:
-        combined_dyn = combined_full[
-            combined_full["industry"] == selected_industry_lower
-        ]
-
-
-    selected_industry_lower = selected_industry.lower()
-    selected_age_lower = selected_age.lower()
-
-    if selected_age != "All":
-
-        industry_dyn = industry_full[
-            (industry_full["industry"] == selected_industry_lower) &
-            (industry_full["age_bracket"] == selected_age_lower)
-        ].copy()
-
-        impact_dyn = impact_full[
-            (impact_full["industry"] == selected_industry_lower) &
-            (impact_full["age_bracket"] == selected_age_lower)
-        ].copy()
-
-    else:
-
-        industry_dyn = industry_full[
-            industry_full["industry"] == selected_industry_lower
-        ].copy()
-
-        impact_dyn = impact_full[
-            impact_full["industry"] == selected_industry_lower
-        ].copy()
-
-    # Full economy for economic tab
-    impact_economy = impact_full
 
 
     # ==========================================================
@@ -1104,15 +1092,26 @@ with main_col:
         "Economic",
         "EOSG & Payroll",
         "Individual Benefit"
+   
     ])
 
     # ==========================================================
-    # JOBS IMPACT (ASSUMPTION LINKED)
+    # TAB 0 — JOB IMPACT (Industry Only, Age Ignored)
     # ==========================================================
-
     with tabs[0]:
 
-        jobs_df = impact_dyn.groupby("year")["Jobs_Impact"].sum().reset_index()
+        st.markdown("### Jobs Impact (Industry Level)")
+
+        if impact_dyn.empty:
+            st.warning("No data available for selected industry.")
+            st.stop()
+
+        jobs_df = (
+            impact_dyn
+            .groupby("year", as_index=False)["Jobs_Impact"]
+            .sum()
+        )
+
         jobs_df["Jobs_K"] = jobs_df["Jobs_Impact"] / 1_000
 
         fig = go.Figure()
@@ -1127,122 +1126,170 @@ with main_col:
 
         fig.update_layout(
             template="plotly_white",
-            yaxis_title="Jobs Impact (Thousand)"
+            yaxis_title="Jobs Impact (Thousand)",
+            height=500
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        st.caption("Note: Job impact is calculated at Industry level (age breakdown not applied).")
 
-
-    # Fund Risk
+    # ==========================================================
+    # TAB 1 — FUND ACCUMULATION (NO EXIT ADJUSTMENT)
+    # ==========================================================
     with tabs[1]:
 
-        st.markdown("### Fund Growth Under Different Return Assumptions")
+        st.markdown("### Fund Growth – Accumulation")
 
-        # -------------------------------------------------------
-        # Base contributions from selected scenario
-        # -------------------------------------------------------
+        df = fund_scenarios_full.copy()
 
-        base_df = industry_full.copy()
+        # -----------------------------------------------------
+        # Industry Filter
+        # -----------------------------------------------------
+        df = df[df["industry"] == selected_industry_lower]
 
-        # Aggregate yearly contributions
-        contrib_year = base_df.groupby("year")[
-            "annual_fund_contribution"
-        ].sum().reset_index()
+        # -----------------------------------------------------
+        # Age Filter
+        # -----------------------------------------------------
+        if selected_age != "All":
+            selected_age_lower = selected_age.lower()
+            df = df[df["age_bracket"] == selected_age_lower]
 
-        years = contrib_year["year"].tolist()
+        if df.empty:
+            st.warning("No data available for selected filters.")
+            st.stop()
 
-        # -------------------------------------------------------
-        # Function to simulate fund roll-forward
-        # -------------------------------------------------------
+        # -----------------------------------------------------
+        # Dynamic Return (Cohort-wise)
+        # -----------------------------------------------------
+        if fund_return == 0.04:
+            df["fund_dynamic"] = df["fund_4"]
 
-        def simulate_fund(contrib_df, return_rate):
-            fund = 0
-            balances = []
+        elif fund_return == 0.06:
+            df["fund_dynamic"] = df["fund_6"]
 
-            for _, row in contrib_df.iterrows():
-                fund = fund * (1 + return_rate)
-                fund += row["annual_fund_contribution"]
-                balances.append(fund)
+        elif fund_return == 0.08:
+            df["fund_dynamic"] = df["fund_8"]
 
-            return balances
+        else:
+            dynamic_blocks = []
 
-        # -------------------------------------------------------
-        # Fixed return comparisons
-        # -------------------------------------------------------
+            for (ind, age, cohort), g in df.groupby(
+                ["industry", "age_bracket", "cohort"],
+                sort=False
+            ):
 
-        fixed_returns = [0.04, 0.06, 0.08]
+                g = g.sort_values("year").copy()
 
+                fund = 0
+                balances = []
+
+                for _, row in g.iterrows():
+
+                    fund = fund * (1 + fund_return)
+                    fund += row["fund_contribution"]
+
+                    balances.append(fund)
+
+                g["fund_dynamic"] = balances
+                dynamic_blocks.append(g)
+
+            df = pd.concat(dynamic_blocks)
+
+        # -----------------------------------------------------
+        # Yearly Aggregation
+        # -----------------------------------------------------
+        grouped = df.groupby("year")[[
+            "fund_4",
+            "fund_6",
+            "fund_8",
+            "fund_dynamic"
+        ]].sum().reset_index()
+
+        # -----------------------------------------------------
+        # Plot
+        # -----------------------------------------------------
         fig = go.Figure()
 
-        for r, color in zip(
-            fixed_returns,
-            ["#053048", "#8BAAAD", "#F5B718"]
-        ):
+        fig.add_trace(go.Scatter(
+            x=grouped["year"],
+            y=grouped["fund_4"] / 1e9,
+            name="4%",
+            line=dict(width=3)
+        ))
 
-            balances = simulate_fund(contrib_year, r)
+        fig.add_trace(go.Scatter(
+            x=grouped["year"],
+            y=grouped["fund_6"] / 1e9,
+            name="6%",
+            line=dict(width=3)
+        ))
 
-            fig.add_trace(go.Scatter(
-                x=years,
-                y=[b/1e9 for b in balances],
-                name=f"{int(r*100)}%",
-                line=dict(width=3, color=color)
-            ))
+        fig.add_trace(go.Scatter(
+            x=grouped["year"],
+            y=grouped["fund_8"] / 1e9,
+            name="8%",
+            line=dict(width=3)
+        ))
 
-    # -------------------------------------------------------
-    # User-selected return (from global slider)
-    # -------------------------------------------------------
+        fig.add_trace(go.Scatter(
+            x=grouped["year"],
+            y=grouped["fund_dynamic"] / 1e9,
+            name=f"Selected ({int(fund_return*100)}%)",
+            line=dict(width=4, dash="dash")
+        ))
 
-    user_balances = simulate_fund(contrib_year, fund_return)
+        fig.update_layout(
+            template="plotly_white",
+            yaxis_title="Fund Balance (Bn)",
+            legend=dict(orientation="h", y=1.1),
+            height=500
+        )
 
-    fig.add_trace(go.Scatter(
-        x=years,
-        y=[b/1e9 for b in user_balances],
-        name=f"Selected ({int(fund_return*100)}%)",
-        line=dict(width=4, dash="dash", color="#93838E")
-    ))
+        st.plotly_chart(fig, use_container_width=True)
 
-    fig.update_layout(
-        template="plotly_white",
-        yaxis_title="Fund Balance (Bn)",
-        legend=dict(orientation="h", y=1.1),
-        height=500
-    )
+        st.caption("""
+                    **Note:** Fund Growth values are aggregated from cohort-level fund balances.
+                    Applying an age bracket filter isolates a subset of employees and does not
+                    represent the full Industry fund pool.
+                    """)
 
-    st.plotly_chart(fig, use_container_width=True)
-
-
-
-    # ==========================================================
-    # Economic
-    # ==========================================================
-
-    # ==========================================================
-    # Economic
-    # ==========================================================
-
+# ==========================================================
+# TAB 2 — ECONOMIC (Sector Level, Age Filter Only)
+# ==========================================================
     with tabs[2]:
 
-        st.markdown("### Economic Impact (Scenario Driven) - All Industry Groups Included")
+        st.markdown("### Economic Impact")
 
+        df = impact_full.copy()
 
-        year_options = sorted(impact_full["year"].dropna().astype(int).unique())
-        economic_year = st.selectbox(
+        if df.empty:
+            st.warning("No data available for selected age filter.")
+            st.stop()
+
+        # -----------------------------------------------------
+        # Year Selector
+        # -----------------------------------------------------
+        year_options = sorted(df["year"].dropna().astype(int).unique())
+
+        selected_year = st.selectbox(
             "Select Year",
             year_options,
             key="economic_tab_year"
         )
 
-        eco = impact_full[
-            impact_full["year"] == economic_year
-        ].copy()
+        eco = df[df["year"] == selected_year].copy()
 
-        # Unit Conversions
+        # -----------------------------------------------------
+        # Unit Conversion
+        # -----------------------------------------------------
         eco["Output_Mn"] = eco["Output_Impact"] / 1_000_000
         eco["GVA_Mn"] = eco["GVA_Impact"] / 1_000_000
         eco["Jobs_K"] = eco["Jobs_Impact"] / 1_000
 
-        # Brand Color Sequence
+        # -----------------------------------------------------
+        # Brand Colors
+        # -----------------------------------------------------
         brand_colors = [
             "#053048",
             "#F5B718",
@@ -1258,14 +1305,13 @@ with main_col:
         # ======================================================
         # OUTPUT IMPACT
         # ======================================================
-
         fig_output = px.pie(
             eco,
             names="SectorMap",
             values="Output_Mn",
             hole=0.55,
             color_discrete_sequence=brand_colors,
-            title="Output Impact by Sector (Million)"
+            title="Output Impact (Million)"
         )
 
         fig_output.update_traces(
@@ -1279,7 +1325,15 @@ with main_col:
             paper_bgcolor="white",
             plot_bgcolor="white",
             title_font=dict(size=18, color="#053048"),
-            legend=dict(font=dict(color="#053048"))
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.25,
+                xanchor="center",
+                x=0.5,
+                font=dict(color="#053048")
+            ),
+            margin=dict(t=60, b=80)
         )
 
         c1.plotly_chart(fig_output, use_container_width=True)
@@ -1287,7 +1341,6 @@ with main_col:
         # ======================================================
         # GVA IMPACT
         # ======================================================
-
         fig_gva = px.pie(
             eco,
             names="SectorMap",
@@ -1308,7 +1361,15 @@ with main_col:
             paper_bgcolor="white",
             plot_bgcolor="white",
             title_font=dict(size=18, color="#053048"),
-            legend=dict(font=dict(color="#053048"))
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.25,
+                xanchor="center",
+                x=0.5,
+                font=dict(color="#053048")
+            ),
+            margin=dict(t=60, b=80)
         )
 
         c2.plotly_chart(fig_gva, use_container_width=True)
@@ -1316,14 +1377,13 @@ with main_col:
         # ======================================================
         # EMPLOYMENT IMPACT
         # ======================================================
-
         fig_jobs = px.pie(
             eco,
             names="SectorMap",
             values="Jobs_K",
             hole=0.55,
             color_discrete_sequence=brand_colors,
-            title="Employment Impact by Sector (Thousand Jobs)"
+            title="Employment Impact (Thousand Jobs)"
         )
 
         fig_jobs.update_traces(
@@ -1337,106 +1397,210 @@ with main_col:
             paper_bgcolor="white",
             plot_bgcolor="white",
             title_font=dict(size=18, color="#053048"),
-            legend=dict(font=dict(color="#053048"))
+            legend=dict(
+                orientation="h",
+                yanchor="top",
+                y=-0.25,
+                xanchor="center",
+                x=0.5,
+                font=dict(color="#053048")
+            ),
+            margin=dict(t=60, b=80)
         )
 
         c3.plotly_chart(fig_jobs, use_container_width=True)
 
-
-    # EOSG & Payroll
+        st.caption("Note: Economic impact displayed at Sector level. Industry filter not applied. Age filter applied if selected.")
     with tabs[3]:
 
-        compare = industry_dyn.groupby("year").agg({
+        st.markdown("### EOSG & Payroll")
+
+        df = industry_dyn.copy()
+        
+
+        df = df[df["industry"] == selected_industry_lower]
+
+        if df.empty:
+            st.warning("No data available.")
+            st.stop()
+
+        grouped = df.groupby("year").agg({
             "annual_total_salary": "sum",
             "closing_fund_with_return": "sum"
         }).reset_index()
 
-        fig = go.Figure()
+        fig = go.Figure()        
 
-        # -------------------------------
-        # Payroll Bars (Light Color)
-        # -------------------------------
-        fig.add_trace(go.Bar(
-            x=compare["year"],
-            y=compare["annual_total_salary"] / 1e9,
-            name="Payroll",
-            marker_color="#BDD4E7",  # light blue
-            yaxis="y2"
+        fig.add_trace(go.Scatter(
+            x=grouped["year"],
+            y=grouped["closing_fund_with_return"] / 1e9,
+            name="Fund Balance (Bn)",
+            mode="lines+markers",
+            line=dict(width=4)
         ))
 
-        # -------------------------------
-        # Fund Line (Dark & On Top)
-        # -------------------------------
-        fig.add_trace(go.Scatter(
-            x=compare["year"],
-            y=compare["closing_fund_with_return"] / 1e9,
-            name="Fund",
-            mode="lines+markers",
-            line=dict(color="#EFD59B", width=4),  # green
-            marker=dict(size=7)
+        fig.add_trace(go.Bar(
+            x=grouped["year"],
+            y=grouped["annual_total_salary"] / 1e9,
+            name="Payroll (Bn)",
+            yaxis="y2"
         ))
 
         fig.update_layout(
             template="plotly_white",
-            height=500,
-            yaxis=dict(
-                title="Fund (Bn)",
-                showgrid=True
-            ),
+            yaxis=dict(title="Fund (Bn)"),
             yaxis2=dict(
                 title="Payroll (Bn)",
                 overlaying="y",
-                side="right",
-                showgrid=False
+                side="right"
             ),
-            legend=dict(orientation="h", y=1.1)
+            legend=dict(orientation="h", y=1.1),
+            height=500
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
+        st.caption("""                
+                    **Note:** Payroll and EOSG fund balances are calculated at the Industry level.
+                    Age bracket selection applies only to workforce-level views and does not
+                    change aggregate Industry totals shown here.
+                    """)
 
-    # Individual Benefit
     with tabs[4]:
 
-        sim_year = st.selectbox(
-            "Exit Year",
-            sorted(combined_dyn["year"].unique())
+        st.markdown("### Individual Benefit Projection")
+        st.caption("Employee assumed to start in 2025 at tenure 0.")
+        if selected_age == "All":
+            st.markdown("""
+                        
+            <div style="
+                background-color:#FDECEC;
+                border-left:6px solid #C62828;
+                padding:15px;
+                border-radius:8px;
+                font-weight:600;
+                color:#7A0000;
+                margin-bottom:15px;
+            ">
+            ⚠ Please select a specific age bracket for Individual Projection.<br>
+            One employee cannot belong to multiple age groups.
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+        else:
+
+            sim_tenure = st.slider("Years of Service", 1, 15, 5)
+
+            target_year = BASE_YEAR + sim_tenure
+
+            df = fund_scenarios_full.copy()
+            # ---------------------------
+            # Industry Filter
+            # ---------------------------
+            df = df[df["industry"] == selected_industry_lower]
+            # ---------------------------
+            # Age Filter
+            # ---------------------------
+            if selected_age != "All":
+                df = df[df["age_bracket"] == selected_age.lower()]
+            
+            # ---------------------------
+            # Cohort Filter (2025_0)
+            # ---------------------------
+            df = df[df["cohort"] == "2025_0"]
+    
+            
+            # ---------------------------
+            # Year & Tenure Filter
+            # ---------------------------
+            df = df[
+                (df["year"] == target_year) &
+                (df["tenure"] == sim_tenure)
+            ]
+
+            if df.empty:
+                st.warning("No data available for this tenure.")
+                st.stop()
+
+            survivors = df["survived_employee"].sum()
+
+            if survivors == 0:
+                st.warning("No surviving employees.")
+                st.stop()
+        
+            per_0 = df["fund_0_exit_adj"].sum() / survivors
+            # 4%, 6%, 8% per person
+            per_4 = df["fund_4_exit_adj"].sum() / survivors
+            per_6 = df["fund_6_exit_adj"].sum() / survivors
+            per_8 = df["fund_8_exit_adj"].sum() / survivors
+
+            st.markdown("### Projected Benefit Per Employee (AED)")
+
+            c0, c1, c2, c3, c4 = st.columns(5)
+
+            card_style = """
+                height:120px;
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                align-items:center;
+                background-color:#ffffff;
+                border-radius:12px;
+                border:1px solid #BDD4E7;
+                padding:10px;
+            """
+
+            highlight_style = """
+                height:120px;
+                display:flex;
+                flex-direction:column;
+                justify-content:center;
+                align-items:center;
+                background-color:#F5B71820;
+                border-radius:12px;
+                border:2px solid #F5B718;
+                padding:10px;
+            """
+
+            def render_card(col, title, tag, value, highlight=False):
+                style = highlight_style if highlight else card_style
+                col.markdown(
+                    f"""
+                    <div style="{style}">
+                        <div style="font-size:13px; color:#77878C;">{title}</div>
+                        <div style="
+                            font-size:11px;
+                            background:#EFD59B;
+                            padding:3px 8px;
+                            border-radius:8px;
+                            margin:6px 0;
+                            font-weight:600;">
+                            {tag}
+                        </div>
+                        <div style="font-size:26px; font-weight:700; color:#053048;">
+                            {value:,.0f}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+            render_card(c0, "Unfunded", "No Investment", per_0)
+            render_card(c1, "4% Return", "Conservative", per_4)
+            render_card(c2, "6% Return", "Base Case", per_6)
+            render_card(c3, "8% Return", "High Growth", per_8)
+            val = per_6 - per_0
+            val_pct = (val / per_0 * 100) if per_0 > 0 else 0
+            render_card(c4,"6% vs 0%",f"Value Created (+{val_pct:.1f}%)",val_pct,highlight=True)
+            st.markdown("---")
+
+        st.caption(
+            """
+            **Methodology:**  
+            Fund value per employee is calculated as:  
+            Total Fund Accumulated ÷ Total Surviving Employees  
+            Values represent the average benefit per active employee 
+            in the selected industry and age group.
+            """
         )
-
-        sim_tenure = st.slider("Tenure", 0, 30, 5)
-
-        sim = combined_dyn[
-            (combined_dyn["year"] == sim_year) &
-            (combined_dyn["tenure"].round() == sim_tenure) &
-            (combined_dyn["exit_employee"] > 0)
-        ]
-
-        if len(sim) > 0:
-
-            avg_no = (
-                sim["exit_payout_no_return"].sum()
-                / sim["exit_employee"].sum()
-            )
-
-            avg_wr = (
-                sim["exit_payout_with_return"].sum()
-                / sim["exit_employee"].sum()
-            )
-
-            c1, c2 = st.columns(2)
-            c1.metric("No Return", f"{avg_no:,.0f}")
-            c2.metric("With Return", f"{avg_wr:,.0f}")
-
-st.markdown(
-    """
-    <div style="
-        text-align:center;
-        font-size:20px;
-        color:#77878C;
-        margin-top:8px;">
-        * All currency values are expressed in AED (United Arab Emirates Dirham).
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
+    
