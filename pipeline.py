@@ -985,3 +985,106 @@ def apply_economic_impact_combined(
     ]]
 
     return df
+
+def generate_cohort_fund_scenarios(combined_df):
+    """
+    Cohort-wise fund simulation at:
+        0%, 4%, 6%, 8%
+
+    Includes:
+        - Fund accumulation
+        - Exit-adjusted remaining balance
+
+    Returns:
+        fund_0, fund_4, fund_6, fund_8
+        fund_0_exit_adj, fund_4_exit_adj,
+        fund_6_exit_adj, fund_8_exit_adj
+    """
+
+    df = combined_df.copy()
+
+    df = df.sort_values(
+        ["industry", "age_bracket", "cohort", "year"]
+    )
+
+    result_blocks = []
+
+    return_rates = {
+        "0": 0.0,
+        "4": 0.04,
+        "6": 0.06,
+        "8": 0.08
+    }
+
+    for (ind, age, cohort), g in df.groupby(
+        ["industry", "age_bracket", "cohort"],
+        sort=False
+    ):
+
+        g = g.sort_values("year").copy()
+
+        for label, r in return_rates.items():
+
+            fund = 0
+            balances = []
+            balances_exit_adj = []
+
+            for _, row in g.iterrows():
+
+                contribution = row["fund_contribution"]
+                survivors = row["survived_employee"]
+                exits = row["exit_employee"]
+
+                # ---------------------------------------------
+                # Roll forward with return
+                # ---------------------------------------------
+                fund = fund * (1 + r)
+                fund += contribution
+
+                balances.append(fund)
+
+                # ---------------------------------------------
+                # Exit payout logic
+                # ---------------------------------------------
+                if survivors > 0:
+                    exit_ratio = exits / survivors
+                else:
+                    exit_ratio = 0
+
+                payout = fund * exit_ratio
+                fund_after_exit = fund - payout
+
+                balances_exit_adj.append(fund_after_exit)
+
+                # Next year starts from remaining balance
+                fund = fund_after_exit
+
+            g[f"fund_{label}"] = balances
+            g[f"fund_{label}_exit_adj"] = balances_exit_adj
+
+        result_blocks.append(
+            g[[
+                "industry",
+                "age_bracket",
+                "cohort",
+                "year",
+                "tenure",
+                "survived_employee",
+                "exit_employee",
+                "fund_contribution",
+                "fund_0",
+                "fund_4",
+                "fund_6",
+                "fund_8",
+                "fund_0_exit_adj",
+                "fund_4_exit_adj",
+                "fund_6_exit_adj",
+                "fund_8_exit_adj"
+            ]]
+        )
+
+    final_df = pd.concat(result_blocks).reset_index(drop=True)
+
+    return final_df
+
+
