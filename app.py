@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -199,8 +199,17 @@ html, body, [class*="css"] { color: #000000 !important; }
 header_col1, header_col2 = st.columns([6, 1])
 
 with header_col2:
+    st.markdown(
+        """
+        <div style="margin-top:20px;">
+        """,
+        unsafe_allow_html=True
+    )
+
     logo = Image.open("data/Synarchy_Primary_Logo - Blue Synarchy.png")
     st.image(logo, width=180)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with header_col1:
     st.title("UAE - Mandatory Gratuity Savings - Funding & Economic Impact Analysis")
@@ -633,13 +642,16 @@ with main_col:
 
 
     # ==========================================================
-    # SIDEBAR – FULL ASSUMPTION PANEL
+    # SIDEBAR – FULL ASSUMPTION PANEL (UPDATED)
     # ==========================================================
 
     with st.sidebar:
 
         st.header("⚙ Industry Assumptions")
 
+        # ------------------------------------------------------
+        # Industry Selection
+        # ------------------------------------------------------
         selected_industry = st.selectbox(
             "Industry",
             sorted(st.session_state.industry_assumptions["Industry"].unique())
@@ -649,6 +661,9 @@ with main_col:
             st.session_state.industry_assumptions["Industry"] == selected_industry
         ]
 
+        # ------------------------------------------------------
+        # Age Selection
+        # ------------------------------------------------------
         age_options = ["All"] + sorted(industry_df["Age_Bracket"].unique())
 
         selected_age = st.selectbox(
@@ -656,45 +671,87 @@ with main_col:
             age_options
         )
 
-        if selected_age != "All":
+        st.markdown("### Input Parameters")
+
+        # ======================================================
+        # WHEN AGE = ALL → DO NOT SHOW ASSUMPTIONS
+        # ======================================================
+        if selected_age == "All":
+
+            st.markdown("""
+            <div style="
+                background-color:#E3F2FD;
+                border-left:6px solid #053048;
+                padding:12px;
+                border-radius:8px;
+                font-weight:600;
+                color:#053048;
+                margin-bottom:10px;
+            ">
+            ℹ Assumptions must be edited at specific age bracket level.
+            Please select an age group to modify parameters.
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ======================================================
+        # WHEN SPECIFIC AGE IS SELECTED
+        # ======================================================
+        else:
+
             row_idx = industry_df[
                 industry_df["Age_Bracket"] == selected_age
             ].index[0]
+
             row = st.session_state.industry_assumptions.loc[row_idx]
-        else:
-            row = industry_df.mean(numeric_only=True)
 
-        st.markdown("### Input Parameters")
+            exp = st.number_input(
+                "Expansion Hiring %",
+                0.0, 1.0,
+                float(row["Expansion Hiring %"]),
+                step=0.01
+            )
 
-        exp = st.number_input("Expansion Hiring %",
-                            0.0, 1.0,
-                            float(row["Expansion Hiring %"]), step=0.01)
+            rep = st.number_input(
+                "Replacement Hiring %",
+                0.0, 1.0,
+                float(row["Replacement Hiring %"]),
+                step=0.01
+            )
 
-        rep = st.number_input("Replacement Hiring %",
-                            0.0, 1.0,
-                            float(row["Replacement Hiring %"]), step=0.01)
+            attr = st.number_input(
+                "Attrition %",
+                0.0, 1.0,
+                float(row["Attrition %"]),
+                step=0.01
+            )
 
-        attr = st.number_input("Attrition %",
-                            0.0, 1.0,
-                            float(row["Attrition %"]), step=0.01)
+            ret = st.number_input(
+                "Retirement Rate",
+                0.0, 1.0,
+                float(row["Retirement Rate"]),
+                step=0.01
+            )
 
-        ret = st.number_input("Retirement Rate",
-                            0.0, 1.0,
-                            float(row["Retirement Rate"]), step=0.01)
+            death = st.number_input(
+                "Death Rate",
+                0.0, 1.0,
+                float(row["Death Rate"]),
+                step=0.01
+            )
 
-        death = st.number_input("Death Rate",
-                                0.0, 1.0,
-                                float(row["Death Rate"]), step=0.01)
+            sal_g = st.number_input(
+                "Salary Growth %",
+                0.0, 0.20,
+                float(row["Salary Growth %"]),
+                step=0.005
+            )
 
-        sal_g = st.number_input("Salary Growth %",
-                                0.0, 0.20,
-                                float(row["Salary Growth %"]), step=0.005)
+            # --------------------------------------------------
+            # Update Button (ONLY for specific age)
+            # --------------------------------------------------
+            if st.button("Update Assumptions"):
 
-        if st.button("Update Assumptions"):
-
-            df = st.session_state.industry_assumptions
-
-            if selected_age != "All":
+                df = st.session_state.industry_assumptions
 
                 df.loc[row_idx, [
                     "Expansion Hiring %",
@@ -705,38 +762,28 @@ with main_col:
                     "Salary Growth %"
                 ]] = [exp, rep, attr, ret, death, sal_g]
 
-            else:
-                df.loc[
-                    df["Industry"] == selected_industry,
-                    [
-                        "Expansion Hiring %",
-                        "Replacement Hiring %",
-                        "Attrition %",
-                        "Retirement Rate",
-                        "Death Rate",
-                        "Salary Growth %"
-                    ]
-                ] = [exp, rep, attr, ret, death, sal_g]
+                # Recalculate derived fields
+                df["Total Hiring %"] = (
+                    df["Expansion Hiring %"] +
+                    df["Replacement Hiring %"]
+                )
 
+                df["Total Exit (q)"] = (
+                    df["Attrition %"] +
+                    df["Retirement Rate"] +
+                    df["Death Rate"]
+                )
 
-            df["Total Hiring %"] = (
-                df["Expansion Hiring %"] +
-                df["Replacement Hiring %"]
-            )
+                df["Net Churn %"] = (
+                    df["Total Hiring %"] -
+                    df["Total Exit (q)"]
+                )
 
-            df["Total Exit (q)"] = (
-                df["Attrition %"] +
-                df["Retirement Rate"] +
-                df["Death Rate"]
-            )
+                st.success("Assumptions Updated ✔")
 
-            df["Net Churn %"] = (
-                df["Total Hiring %"] -
-                df["Total Exit (q)"]
-            )
-
-            st.success("Assumptions Updated ✔")
-
+        # ======================================================
+        # GLOBAL CONTROLS
+        # ======================================================
         st.markdown("---")
         st.header("Global Controls")
 
@@ -749,6 +796,7 @@ with main_col:
             "Leakage %",
             0.0, 50.0, 28.0
         ) / 100
+
 
 
     # ==========================================================
@@ -1604,5 +1652,3 @@ with main_col:
             """
         )
     
-
-
