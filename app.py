@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -424,7 +424,14 @@ with main_col:
             INDUSTRY_RATES
         )
 
+
     merged_df = load_base()
+    # Optimize types for faster groupby/merge
+    if "Industry" in merged_df.columns:
+        merged_df["Industry"] = merged_df["Industry"].astype("category")
+    if "Age_Bracket" in merged_df.columns:
+        merged_df["Age_Bracket"] = merged_df["Age_Bracket"].astype("category")
+
 
     if "industry_assumptions" not in st.session_state:
         st.session_state.industry_assumptions = merged_df.copy()
@@ -435,7 +442,7 @@ with main_col:
 
     @st.cache_data
     def load_template():
-        return generate_combined_employee_survival_template(META_INFO)
+        return generate_survival_template_cohort_style(META_INFO)
 
     survival_template = load_template()
 
@@ -514,53 +521,113 @@ with main_col:
     # ENGINE FUNCTIONS
     # ==========================================================
 
-    @st.cache_data
+    @st.cache_data(show_spinner=False)
     def run_full_engine(industry_assumptions,
-                    fund_return,
-                    leakage_rate):
+                        fund_return,
+                        leakage_rate):
 
-        # Employee forecast
+        # ==========================================================
+        # 1️⃣ Employee + Salary Forecast
+        # ==========================================================
+
         emp_forecast, sal_forecast = generate_employee_salary_forecast(
             EMPLOYEE_SALARY,
+            industry_assumptions,
+            start_year=BASE_YEAR
+        )
+
+        # ==========================================================
+        # 2️⃣ Survival Template
+        # ==========================================================
+
+        survival_template = generate_survival_template_cohort_style(
+            META_INFO,
+            start_year=BASE_YEAR
+        )
+
+        # ==========================================================
+        # 3️⃣ Attach Salary
+        # ==========================================================
+
+        survival_with_salary = attach_salary_to_survival(
+            survival_template,
+            sal_forecast
+        )
+
+        # ==========================================================
+        # 4️⃣ Attach Employees
+        # ==========================================================
+
+        survival_with_emp = attach_employees_to_survival(
+            survival_with_salary,
+            emp_forecast
+        )
+
+        # ==========================================================
+        # 5️⃣ Attach Exit & Replacement Rates
+        # ==========================================================
+
+        survival_ready = attach_exit_and_replacement(
+            survival_with_emp,
             industry_assumptions
         )
 
-        # Attach exit rates to unified template
-        survival_with_rates, _ = attach_exit_rates(
-            industry_assumptions,
-            new_survival_df=survival_template
+        # ==========================================================
+        # 6️⃣ Run Full Survival + EOSG + Fund Engine
+        # ==========================================================
+
+        combined_df = run_full_survival_eosg_model(
+            survival_ready,
+            fund_return_rate=fund_return,
+            start_year=BASE_YEAR
         )
 
-        # Combined unified engine
-        combined_df = generate_combined_employee_full_calculation(
-            survival_with_rates,
-            emp_forecast,
-            sal_forecast,
-            fund_return
+        # ==========================================================
+        # 7️⃣ Aggregate Industry × Year
+        # ==========================================================
+
+        industry_year = aggregate_industry_year_combined(
+            combined_df
         )
 
-        industry_year = aggregate_industry_year(combined_df)
+        # ==========================================================
+        # 8️⃣ Apply Economic Layer
+        # ==========================================================
 
-        impact_df = run_economic_layer(
+        impact_df = apply_economic_impact_combined(
             industry_year,
-            ECONOMIC_FILE,
+            pd.read_excel(ECONOMIC_FILE),
             leakage_rate
         )
 
-        # Drop base year
-        combined_df = combined_df[
-            combined_df["year"] > BASE_YEAR
-        ]
+        impact_df = impact_df.rename(columns={
+            "output_impact": "Output_Impact",
+            "gva_impact": "GVA_Impact",
+            "jobs_impact": "Jobs_Impact"
+        })
 
-        industry_year = industry_year[
-            industry_year["year"] > BASE_YEAR
-        ]
+        economic_df = pd.read_excel(ECONOMIC_FILE)
 
-        impact_df = impact_df[
-            impact_df["year"] > BASE_YEAR
-        ]
+        economic_df["Industry"] = economic_df["Industry"].str.lower().str.strip()
+
+        impact_df = impact_df.merge(
+            economic_df[["Industry", "SectorMap"]],
+            left_on="industry",
+            right_on="Industry",
+            how="left"
+        )
+
+        impact_df.drop(columns=["Industry"], inplace=True)
+        # ==========================================================
+        # 9️⃣ Drop Base Year
+        # ==========================================================
+
+        combined_df = combined_df[combined_df["year"] > BASE_YEAR]
+        industry_year = industry_year[industry_year["year"] > BASE_YEAR]
+        impact_df = impact_df[impact_df["year"] > BASE_YEAR]
 
         return combined_df, industry_year, impact_df
+
 
 
 
@@ -687,11 +754,14 @@ with main_col:
     # STATIC BASELINE (DOES NOT CHANGE)
     # ==========================================================
 
-    combined_static, industry_static, impact_static = run_full_engine(
-        merged_df,
-        BASE_RETURN,
-        BASE_LEAKAGE
-    )
+    if "baseline_cache" not in st.session_state:
+        st.session_state.baseline_cache = run_full_engine(
+            merged_df,
+            BASE_RETURN,
+            BASE_LEAKAGE
+        )
+
+    combined_static, industry_static, impact_static = st.session_state.baseline_cache
 
     # ==========================================================
     # GLOBAL BASELINE SUMMARY
@@ -948,15 +1018,32 @@ with main_col:
     st.plotly_chart(fig_evo, use_container_width=True)
 
 
-    # ==========================================================
-    # DYNAMIC SCENARIO (FULL ENGINE RUN ONCE)
-    # ==========================================================
 
-    combined_full, industry_full, impact_full = run_full_engine(
-        st.session_state.industry_assumptions,
-        fund_return,
-        leakage
-    )
+    # ==========================================================
+    # DYNAMIC SCENARIO (FULL ENGINE RUN ONCE, CACHED)
+    # ==========================================================
+    # Create a unique key based on current parameters
+    import hashlib
+    import pickle
+    def get_engine_key(assumptions, fund_return, leakage):
+        # Use a hash of the assumptions DataFrame and parameters
+        assumptions_bytes = pickle.dumps(assumptions)
+        key_str = assumptions_bytes + str(fund_return).encode() + str(leakage).encode()
+        return hashlib.md5(key_str).hexdigest()
+
+    engine_key = get_engine_key(st.session_state.industry_assumptions, fund_return, leakage)
+
+    if 'dynamic_engine_cache' not in st.session_state:
+        st.session_state.dynamic_engine_cache = {}
+
+    if engine_key not in st.session_state.dynamic_engine_cache:
+        st.session_state.dynamic_engine_cache[engine_key] = run_full_engine(
+            st.session_state.industry_assumptions,
+            fund_return,
+            leakage
+        )
+
+    combined_full, industry_full, impact_full = st.session_state.dynamic_engine_cache[engine_key]
 
 
     # Filtered data for selected industry + age
@@ -967,7 +1054,7 @@ with main_col:
 
         combined_dyn = combined_full[
             (combined_full["industry"] == selected_industry_lower) &
-            (combined_full["age_bucket"] == selected_age_lower)
+            (combined_full["age_bracket"] == selected_age_lower)
         ]
 
     else:
@@ -976,13 +1063,30 @@ with main_col:
         ]
 
 
-    industry_dyn = aggregate_industry_year(combined_dyn)
+    selected_industry_lower = selected_industry.lower()
+    selected_age_lower = selected_age.lower()
 
-    impact_dyn = run_economic_layer(
-        industry_dyn,
-        ECONOMIC_FILE,
-        leakage
-    )
+    if selected_age != "All":
+
+        industry_dyn = industry_full[
+            (industry_full["industry"] == selected_industry_lower) &
+            (industry_full["age_bracket"] == selected_age_lower)
+        ].copy()
+
+        impact_dyn = impact_full[
+            (impact_full["industry"] == selected_industry_lower) &
+            (impact_full["age_bracket"] == selected_age_lower)
+        ].copy()
+
+    else:
+
+        industry_dyn = industry_full[
+            industry_full["industry"] == selected_industry_lower
+        ].copy()
+
+        impact_dyn = impact_full[
+            impact_full["industry"] == selected_industry_lower
+        ].copy()
 
     # Full economy for economic tab
     impact_economy = impact_full
@@ -1033,54 +1137,81 @@ with main_col:
     # Fund Risk
     with tabs[1]:
 
-        fig = go.Figure()
+        st.markdown("### Fund Growth Under Different Return Assumptions")
 
-        comparison_rates = [0.04, 0.08, 0.11]
+        # -------------------------------------------------------
+        # Base contributions from selected scenario
+        # -------------------------------------------------------
 
-        for r, color in zip(comparison_rates,
-                            ["#053048","#8BAAAD","#F5B718"]):
+        base_df = industry_full.copy()
 
-            _, ind_tmp, _ = run_full_engine(
-                st.session_state.industry_assumptions,
-                r,
-                leakage
-            )
-
-            ind_tmp = ind_tmp.groupby("year")[
-                "closing_fund_with_return"
-            ].sum().reset_index()
-
-            fig.add_trace(go.Scatter(
-                x=ind_tmp["year"],
-                y=ind_tmp["closing_fund_with_return"]/1e9,
-                name=f"{int(r*100)}%",
-                line=dict(color=color, width=2)
-            ))
-
-        # 🔥 Recalculate selected scenario fresh (NOT using cached industry_dyn)
-        _, selected_industry, _ = run_full_engine(
-            st.session_state.industry_assumptions,
-            fund_return,
-            leakage
-        )
-
-        selected_industry = selected_industry.groupby("year")[
-            "closing_fund_with_return"
+        # Aggregate yearly contributions
+        contrib_year = base_df.groupby("year")[
+            "annual_fund_contribution"
         ].sum().reset_index()
 
-        fig.add_trace(go.Scatter(
-            x=selected_industry["year"],
-            y=selected_industry["closing_fund_with_return"]/1e9,
-            name="Selected Scenario",
-            line=dict(color="#93838E", width=4)
-        ))
+        years = contrib_year["year"].tolist()
 
-        fig.update_layout(
-            yaxis_title="Fund Balance (Bn)",
-            legend=dict(orientation="h")
-        )
+        # -------------------------------------------------------
+        # Function to simulate fund roll-forward
+        # -------------------------------------------------------
 
-        st.plotly_chart(fig, use_container_width=True)
+        def simulate_fund(contrib_df, return_rate):
+            fund = 0
+            balances = []
+
+            for _, row in contrib_df.iterrows():
+                fund = fund * (1 + return_rate)
+                fund += row["annual_fund_contribution"]
+                balances.append(fund)
+
+            return balances
+
+        # -------------------------------------------------------
+        # Fixed return comparisons
+        # -------------------------------------------------------
+
+        fixed_returns = [0.04, 0.06, 0.08]
+
+        fig = go.Figure()
+
+        for r, color in zip(
+            fixed_returns,
+            ["#053048", "#8BAAAD", "#F5B718"]
+        ):
+
+            balances = simulate_fund(contrib_year, r)
+
+            fig.add_trace(go.Scatter(
+                x=years,
+                y=[b/1e9 for b in balances],
+                name=f"{int(r*100)}%",
+                line=dict(width=3, color=color)
+            ))
+
+    # -------------------------------------------------------
+    # User-selected return (from global slider)
+    # -------------------------------------------------------
+
+    user_balances = simulate_fund(contrib_year, fund_return)
+
+    fig.add_trace(go.Scatter(
+        x=years,
+        y=[b/1e9 for b in user_balances],
+        name=f"Selected ({int(fund_return*100)}%)",
+        line=dict(width=4, dash="dash", color="#93838E")
+    ))
+
+    fig.update_layout(
+        template="plotly_white",
+        yaxis_title="Fund Balance (Bn)",
+        legend=dict(orientation="h", y=1.1),
+        height=500
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
 
     # ==========================================================
     # Economic
@@ -1308,4 +1439,3 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
