@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-
+from numba import njit, prange
 
 def generate_merged_industry_data(
     industry_desc_path,
@@ -8,37 +8,32 @@ def generate_merged_industry_data(
     save_output=False,
     output_path=None
 ):
-    """
-    Merges industry description with industry rates,
-    cleans percentage columns, recalculates key metrics,
-    and optionally saves output.
 
-    Returns:
-        merged_df (DataFrame)
-    """
-
-    # --------------------------------------
+    # -----------------------------
     # 1. Load Files
-    # --------------------------------------
+    # -----------------------------
     industry_desc = pd.read_excel(industry_desc_path)
     industry_rates = pd.read_excel(industry_rates_path)
 
     industry_desc.columns = industry_desc.columns.str.strip()
     industry_rates.columns = industry_rates.columns.str.strip()
 
-    # --------------------------------------
-    # 2. Merge (Left Join on Industry)
-    # --------------------------------------
+    if "Industry" not in industry_desc.columns:
+        raise ValueError("Industry column missing in industry description file.")
+
+    # -----------------------------
+    # 2. Merge
+    # -----------------------------
     merged_df = industry_desc.merge(
         industry_rates,
         on="Industry",
         how="left"
     )
 
-    # --------------------------------------
-    # 3. Keep Required Columns
-    # --------------------------------------
-    merged_df = merged_df[[
+    # -----------------------------
+    # 3. Keep Required Columns (safe filtering)
+    # -----------------------------
+    required_columns = [
         'Industry',
         'Age_Bracket',
         'Retirement Rate',
@@ -50,66 +45,72 @@ def generate_merged_industry_data(
         'Total Hiring %',
         'Net Churn %',
         'Salary Growth %'
-    ]]
-
-    # --------------------------------------
-    # 4. Clean Percentage Columns
-    # --------------------------------------
-    pct_columns = [
-        "Retirement Rate",
-        "Death Rate",
-        "Emp Growth %",
-        "Attrition %",
-        "Replacement Hiring %",
-        "Expansion Hiring %",
-        "Total Hiring %",
-        "Net Churn %",
-        "Salary Growth %"
     ]
 
-    pct_columns = [col for col in pct_columns if col in merged_df.columns]
+    merged_df = merged_df[
+        [c for c in required_columns if c in merged_df.columns]
+    ]
+
+    # -----------------------------
+    # 4. Clean Percentage Columns
+    # -----------------------------
+    pct_columns = [
+        c for c in required_columns
+        if c in merged_df.columns and (
+            "%" in c or "Rate" in c
+        )
+    ]
+
+    # Remove % symbol if exists
+    for col in pct_columns:
+        merged_df[col] = (
+            merged_df[col]
+            .astype(str)
+            .str.replace("%", "", regex=False)
+        )
 
     merged_df[pct_columns] = merged_df[pct_columns].apply(
         pd.to_numeric, errors="coerce"
     )
 
-    merged_df[pct_columns] = merged_df[pct_columns].applymap(
-        lambda x: x / 100 if pd.notnull(x) and x > 1 else x
-    )
+    print("i am here")
+    # Convert >1 values to decimal
+    for col in pct_columns:
+        if merged_df[col].max() > 1:
+            merged_df[col] = merged_df[col] / 100
+            print(merged_df[col])
 
-    # --------------------------------------
+    # -----------------------------
     # 5. Recalculate Metrics
-    # --------------------------------------
+    # -----------------------------
     merged_df['Total Hiring %'] = (
         merged_df['Replacement Hiring %'] +
         merged_df['Expansion Hiring %']
     )
 
-    merged_df['Attrition %'] += 0.005
-    
-    
+    # merged_df['Attrition %'] = (
+    #     merged_df['Attrition %'] + 0.005
+    # )
+
+    merged_df['Attrition %'] = (
+        merged_df['Attrition %']
+    )
 
     merged_df['Total Exit (q)'] = (
         merged_df['Retirement Rate'] +
         merged_df['Death Rate'] +
         merged_df['Attrition %']
-    )
-
-    merged_df['Total Exit (q)'] = np.where(
-        merged_df['Total Exit (q)'] > 1,
-        1,
-        merged_df['Total Exit (q)']
-    )
+    ).clip(upper=1)
 
     merged_df['Net Churn %'] = (
         merged_df['Total Hiring %'] -
         merged_df['Total Exit (q)']
     )
 
-    # --------------------------------------
-    # 6. Reorder Columns
-    # --------------------------------------
-    final_column_order = [
+    # -----------------------------
+    # 6. Reorder
+    # -----------------------------
+    final_order = [
         "Industry",
         "Age_Bracket",
         "Expansion Hiring %",
@@ -123,21 +124,17 @@ def generate_merged_industry_data(
         "Net Churn %"
     ]
 
-    final_column_order = [
-        col for col in final_column_order if col in merged_df.columns
+    merged_df = merged_df[
+        [c for c in final_order if c in merged_df.columns]
     ]
 
-    merged_df = merged_df[final_column_order]
-
-    # --------------------------------------
+    # -----------------------------
     # 7. Optional Save
-    # --------------------------------------
-    if save_output and output_path is not None:
+    # -----------------------------
+    if save_output and output_path:
         merged_df.to_excel(output_path, index=False)
 
     return merged_df
-import pandas as pd
-import numpy as np
 
 
 def generate_employee_salary_forecast(
@@ -149,50 +146,47 @@ def generate_employee_salary_forecast(
     employee_output_path=None,
     salary_output_path=None
 ):
-    """
-    Generates:
-        1. SideBySide Employee Forecast (Incremental from 2026 onward)
-        2. SideBySide Weighted Salary Forecast
-    """
-
+ 
     # ==========================================================
-    # 1. LOAD BASE EMPLOYEE DATA
+    # 1. LOAD DATA
     # ==========================================================
-    df1 = pd.read_excel(employee_salary_path)
-    df2 = merged_industry_df.copy()
-    print(df1['Tenure'].unique())
+    df_emp = pd.read_excel(employee_salary_path)
+    df_rates = merged_industry_df.copy()
 
-    df1.columns = df1.columns.str.strip()
-    df2.columns = df2.columns.str.strip()
+    df_emp.columns = df_emp.columns.str.strip()
+    df_rates.columns = df_rates.columns.str.strip()
 
-    df1 = df1.rename(columns={
-        "Age_Brackets": "Age_Brackets",
+    # Standardize names
+    df_emp = df_emp.rename(columns={
         "Average Basic Salary": "Average_Base_Salary"
     })
 
-    df2 = df2.rename(columns={
-        "Industry": "Industry",
+    df_rates = df_rates.rename(columns={
         "Age_Bracket": "Age_Brackets"
     })
 
     # ==========================================================
-    # 2. MERGE EXIT + HIRING + SALARY GROWTH
+    # 2. MERGE RATES
     # ==========================================================
-    df = df1.merge(
-        df2[[
-            "Industry",
-            "Age_Brackets",
-            "Total Exit (q)",
-            "Total Hiring %",
-            "Salary Growth %"
-        ]],
+    merge_cols = [
+        "Industry",
+        "Age_Brackets",
+        "Total Exit (q)",
+        "Total Hiring %",
+        "Salary Growth %",
+        "Expansion Hiring %"
+    ]
+
+    df = df_emp.merge(
+        df_rates[merge_cols],
         on=["Industry", "Age_Brackets"],
         how="left"
     )
 
-    df[["Total Exit (q)", "Total Hiring %", "Salary Growth %"]] = df[
-        ["Total Exit (q)", "Total Hiring %", "Salary Growth %"]
-    ].fillna(0)
+    df[["Total Exit (q)", "Total Hiring %", "Salary Growth %"]] = (
+        df[["Total Exit (q)", "Total Hiring %", "Salary Growth %"]]
+        .fillna(0)
+    )
 
     # ==========================================================
     # 3. BASE YEAR
@@ -201,738 +195,793 @@ def generate_employee_salary_forecast(
     df[f"Salary_{start_year}"] = df["Average_Base_Salary"]
 
     # ==========================================================
-    # 4. BUILD FULL CUMULATIVE SERIES FIRST
+    # 4. BUILD FULL CUMULATIVE SERIES
     # ==========================================================
+    tenure0_mask = df["Tenure"] == 0
+    non_tenure0_mask = ~tenure0_mask
+
+    # Keep base year cumulative copy
+    df[f"Emp_{start_year}_cum"] = df[f"Emp_{start_year}"]
 
     for year in range(start_year + 1, end_year + 1):
 
-        prev_year = year - 1
+        prev = year - 1
 
-        # Only tenure 0 grows cumulatively
-        df.loc[df["Tenure"] == 0, f"Emp_{year}"] = (
-            df.loc[df["Tenure"] == 0, f"Emp_{prev_year}"]
-            * (1 + df.loc[df["Tenure"] == 0, "Total Hiring %"])
+        # CUMULATIVE expansion growth (tenure 0 only)
+        df.loc[tenure0_mask, f"Emp_{year}_cum"] = (
+            df.loc[tenure0_mask, f"Emp_{prev}_cum"]
+            * (1 + df.loc[tenure0_mask, "Expansion Hiring %"])
         )
 
-        # Other tenures = 0 (survival will populate)
-        df.loc[df["Tenure"] != 0, f"Emp_{year}"] = 0
+        # Other tenures remain zero cumulative
+        df.loc[non_tenure0_mask, f"Emp_{year}_cum"] = 0
 
-        # Salary growth
+        # Salary grows normally (unchanged)
         df[f"Salary_{year}"] = (
-            df[f"Salary_{prev_year}"] *
+            df[f"Salary_{prev}"] *
             (1 + df["Salary Growth %"])
         )
-
+    
 
     # ==========================================================
-    # 5. NOW CONVERT TO INCREMENTAL (AFTER FULL BUILD)
+    # 5. CONVERT TO INCREMENTAL (2026 onward)
     # ==========================================================
 
-    emp_cols = [f"Emp_{y}" for y in range(start_year, end_year + 1)]
-
-    emp_cumulative = df[emp_cols].copy()
+    df[f"Emp_{start_year}"] = df[f"Emp_{start_year}_cum"]
 
     for year in range(start_year + 1, end_year + 1):
 
-        prev_year = year - 1
+        prev = year - 1
 
         df[f"Emp_{year}"] = (
-            emp_cumulative[f"Emp_{year}"] -
-            emp_cumulative[f"Emp_{prev_year}"]
+            df[f"Emp_{year}_cum"] -
+            df[f"Emp_{prev}_cum"]
         )
 
     # Keep only tenure 0 incremental
-    for year in range(start_year + 1, end_year + 1):
-        df.loc[df["Tenure"] != 0, f"Emp_{year}"] = 0
+    emp_cols = [f"Emp_{y}" for y in range(start_year, end_year + 1)]
+    df.loc[non_tenure0_mask, emp_cols[1:]] = 0
+    cum_cols = [c for c in df.columns if c.endswith("_cum")]
+    df.drop(columns=cum_cols, inplace=True)
 
     # ==========================================================
-    # 5. AGGREGATE EMPLOYEES
+    # 6. AGGREGATE EMPLOYEES
     # ==========================================================
-    emp_cols = [col for col in df.columns if col.startswith("Emp_")]
+    emp_cols = [c for c in df.columns if c.startswith("Emp_")]
 
     employee_agg = (
-        df.groupby(["Industry", "Age_Brackets", "Tenure"], as_index=False)[emp_cols]
+        df.groupby(
+            ["Industry", "Age_Brackets", "Tenure"],
+            as_index=False
+        )[emp_cols]
         .sum()
     )
 
-    # ==========================================================
-    # 6. WEIGHTED SALARY
-    # ==========================================================
-    for year in range(start_year, end_year + 1):
-        df[f"SalaryEmp_{year}"] = (
-            df[f"Salary_{year}"] *
-            df[f"Emp_{year}"]
-        )
+    salary_cols = [f"Salary_{y}" for y in range(start_year, end_year + 1)]
 
-    salaryemp_cols = [col for col in df.columns if col.startswith("SalaryEmp_")]
-
-    salaryemp_agg = (
-        df.groupby(["Industry", "Age_Brackets", "Tenure"], as_index=False)[salaryemp_cols]
-        .sum()
+    salary_agg = (
+        df.groupby(
+            ["Industry", "Age_Brackets", "Tenure"],
+            as_index=False
+        )[salary_cols]
+        .first()
     )
-
-    salary_agg = employee_agg.copy()
-
-    for year in range(start_year, end_year + 1):
-        salary_agg[f"Salary_{year}"] = np.where(
-            salary_agg[f"Emp_{year}"] == 0,
-            0,
-            salaryemp_agg[f"SalaryEmp_{year}"] /
-            salary_agg[f"Emp_{year}"]
-        )
-
     salary_agg = salary_agg[
         ["Industry", "Age_Brackets", "Tenure"] +
         [f"Salary_{y}" for y in range(start_year, end_year + 1)]
     ]
 
     # ==========================================================
-    # 7. NEW HIRING LOGIC (Only tenure 0 or 0.5 allowed)
+    # 8. NEW HIRING LOGIC
     # ==========================================================
     emp_cols_excl_base = [
-        col for col in employee_agg.columns
-        if col.startswith("Emp_") and col != f"Emp_{start_year}"
+        c for c in employee_agg.columns
+        if c.startswith("Emp_") and c != f"Emp_{start_year}"
     ]
 
-    mask = ~employee_agg["Tenure"].isin([0, 0.5])
-    employee_agg.loc[mask, emp_cols_excl_base] = 0
+    mask_invalid = ~employee_agg["Tenure"].isin([0, 0.5])
+    employee_agg.loc[mask_invalid, emp_cols_excl_base] = 0
 
     # ==========================================================
-    # 8. OPTIONAL SAVE
+    # 9. OPTIONAL SAVE
     # ==========================================================
     if save_output:
         if employee_output_path:
             employee_agg.to_excel(employee_output_path, index=False)
-
         if salary_output_path:
             salary_agg.to_excel(salary_output_path, index=False)
 
     return employee_agg, salary_agg
 
 
-def generate_combined_employee_survival_template(
+def generate_survival_template_cohort_style(
     meta_info_path,
     start_year=2025,
     end_year=2040
 ):
     """
-    Generates ONE unified survival template:
+    Creates survival template in cohort format + extra fixed 2025 cohort block.
 
-    Structure:
-        industry × age_bucket × tenure × year
+    Structure 1:
+        Normal yearly cohorts (2025_0, 2026_0, ...)
 
-    - Tenure starts at 0
-    - Tenure runs up to max tenure found in meta file
-    - Covers projection years start_year → end_year
-    - No separation of old/new employees
+    Structure 2:
+        Fixed 2025 starting cohort
+        Tenure starts from 1 and increases every year
     """
 
-    # --------------------------------
-    # 1️⃣ Load Meta Info
-    # --------------------------------
+    import pandas as pd
+
+    # ----------------------------------------------------------
+    # 1. LOAD META FILE
+    # ----------------------------------------------------------
     df_raw = pd.read_csv(meta_info_path)
+    df_raw.columns = df_raw.columns.str.strip()
 
     industries = df_raw["Industry"].dropna().unique()
-    age_buckets = df_raw["Age_Bracket"].dropna().unique()
+    age_bracket = df_raw["Age_Bracket"].dropna().unique()
 
-    # Use tenure column if exists, otherwise Old_Tenure
-    if "Tenure" in df_raw.columns:
-        max_tenure = int(df_raw["Tenure"].dropna().max())
-    elif "Old_Tenure" in df_raw.columns:
-        max_tenure = int(df_raw["Old_Tenure"].dropna().max())
-    else:
-        raise ValueError("No Tenure or Old_Tenure column found in meta file.")
-
-    tenures = range(0, max_tenure + 1)
     projection_years = range(start_year, end_year + 1)
 
-    # --------------------------------
-    # 2️⃣ Cartesian Product Grid
-    # --------------------------------
-    index = pd.MultiIndex.from_product(
-        [industries, age_buckets, tenures, projection_years],
-        names=[
-            "industry",
-            "age_bucket",
-            "tenure",
-            "year"
+    records = []
+
+    # ----------------------------------------------------------
+    # 2. ORIGINAL COHORT STRUCTURE (UNCHANGED)
+    # ----------------------------------------------------------
+    for ind in industries:
+        for age in age_bracket:
+
+            for cohort_start in projection_years:
+
+                cohort_name = f"{cohort_start}_0"
+
+                for year in projection_years:
+
+                    if year >= cohort_start:
+
+                        tenure = year - cohort_start
+
+                        records.append([
+                            ind,
+                            age,
+                            cohort_name,
+                            year,
+                            tenure
+                        ])
+
+    max_initial_tenure = df_raw["Tenure"].max()
+
+    for ind in industries:
+        for age in age_bracket:
+
+            for initial_tenure in range(1, int(max_initial_tenure) + 1):
+
+                cohort_name = f"{start_year}_{initial_tenure}"
+
+                for year in projection_years:
+
+                    tenure = initial_tenure + (year - start_year)
+
+                    records.append([
+                        ind,
+                        age,
+                        cohort_name,
+                        year,
+                        tenure
+                    ])
+
+    survival_template = pd.DataFrame(
+        records,
+        columns=[
+            "Industry",
+            "Age_Bracket",
+            "cohort",
+            "Year",
+            "Tenure"
         ]
     )
 
-    survival_template = index.to_frame(index=False)
-
     survival_template = survival_template.sort_values(
-        ["industry", "age_bucket", "year", "tenure"]
+        ["Industry", "Age_Bracket", "cohort", "Year"]
     ).reset_index(drop=True)
-    print("----------")
-    print(survival_template.columns)
 
     return survival_template
 
 
-def attach_exit_rates(
-    merged_industry_df,
-    new_survival_df=None,
-    old_survival_df=None
-):
-    """
-    Attaches exit and hiring rates to survival templates.
-
-    Parameters
-    ----------
-    merged_industry_df : DataFrame
-        Output of Script 1 (industry merge function)
-
-    new_survival_df : DataFrame (optional)
-        Output of Script 3 (new survival template)
-
-    old_survival_df : DataFrame (optional)
-        Output of Script 4 (old survival template)
-
-    Returns
-    -------
-    new_updated : DataFrame or None
-    old_updated : DataFrame or None
-    """
-
-    # ----------------------------------------
-    # 1️⃣ Prepare Exit Data
-    # ----------------------------------------
-    exit_df = merged_industry_df.copy()
-
-    exit_df = exit_df[[
-        "Industry",
-        "Age_Bracket",
-        "Total Exit (q)",
-        "Total Hiring %",
-        "Replacement Hiring %"
-    ]]
-
-    exit_df = exit_df.rename(columns={
-        "Industry": "industry",
-        "Age_Bracket": "age_bucket",
-        "Total Exit (q)": "total exit (q)",
-        "Total Hiring %": "total hiring %",
-        "Replacement Hiring %": "replacement hiring %"
-    })
-    # Normalize
-    exit_df["industry"] = exit_df["industry"].str.strip().str.lower()
-    exit_df["age_bucket"] = exit_df["age_bucket"].str.strip().str.lower()
-
-    # ----------------------------------------
-    # 2️⃣ Merge into NEW survival template
-    # ----------------------------------------
-    new_updated = None
-    if new_survival_df is not None:
-
-        new_df = new_survival_df.copy()
-        new_df["industry"] = new_df["industry"].str.strip().str.lower()
-        new_df["age_bucket"] = new_df["age_bucket"].str.strip().str.lower()
-
-        new_updated = new_df.merge(
-            exit_df,
-            on=["industry", "age_bucket"],
-            how="left"
-        )
-
-    # ----------------------------------------
-    # 3️⃣ Merge into OLD survival template
-    # ----------------------------------------
-    old_updated = None
-    if old_survival_df is not None:
-
-        old_df = old_survival_df.copy()
-        old_df["industry"] = old_df["industry"].str.strip().str.lower()
-        old_df["age_bucket"] = old_df["age_bucket"].str.strip().str.lower()
-
-        old_updated = old_df.merge(
-            exit_df,
-            on=["industry", "age_bucket"],
-            how="left"
-        )
-
-    return new_updated, old_updated
-
-
-def generate_combined_employee_full_calculation(
+def attach_salary_to_survival(
     survival_template_df,
-    employee_forecast_df,
-    salary_forecast_df,
-    fund_return_rate=0.04
+    salary_forecast_df
 ):
-    """
-    Unified Survival + EOSG + Fund Calculation Engine
+    import pandas as pd
 
-    Logic:
-    - 2025: actual employees for all tenures
-    - Survival forward using exit rate
-    - Track exits
-    - From 2026 onward:
-        * Replacement hiring = exit rate (for <55, 56-64)
-        * Prior year exits rehired into tenure 0
-        * Add incremental forecast hires
-    - EOSG + Fund logic unchanged
-    """
+    surv = survival_template_df.copy()
+    sal = salary_forecast_df.copy()
 
+    # ----------------------------
+    # 1. Standardize column names
+    # ----------------------------
+    surv.columns = surv.columns.str.strip()
+    sal.columns = sal.columns.str.strip()
 
-    # ==========================================================
-    # 1️⃣ Standardize
-    # ==========================================================
-    df = survival_template_df.copy()
-    emp_df = employee_forecast_df.copy()
-    sal_df = salary_forecast_df.copy()
+    sal = sal.rename(columns={
+        "Age_Brackets": "Age_Bracket"
+    })
 
-    df.columns = df.columns.str.lower().str.strip()
-    emp_df.columns = emp_df.columns.str.lower().str.strip()
-    sal_df.columns = sal_df.columns.str.lower().str.strip()
+    # ----------------------------
+    # 2. Melt salary wide → long
+    # ----------------------------
+    salary_cols = [c for c in sal.columns if c.startswith("Salary_")]
 
-    emp_df = emp_df.rename(columns={"age_brackets": "age_bucket"})
-    sal_df = sal_df.rename(columns={"age_brackets": "age_bucket"})
-
-    # Normalize strings
-    for d in [df, emp_df, sal_df]:
-        d["industry"] = d["industry"].str.lower().str.strip()
-        d["age_bucket"] = d["age_bucket"].str.lower().str.strip()
-
-    # ==========================================================
-    # 2️⃣ Convert Forecasts to Long
-    # ==========================================================
-    emp_cols = [c for c in emp_df.columns if c.startswith("emp_")]
-    emp_long = emp_df.melt(
-        id_vars=["industry", "age_bucket", "tenure"],
-        value_vars=emp_cols,
-        var_name="year",
-        value_name="forecast_employee"
-    )
-    emp_long["year"] = emp_long["year"].str.extract(r"(\d+)").astype(int)
-
-    sal_cols = [c for c in sal_df.columns if c.startswith("salary_")]
-    sal_long = sal_df.melt(
-        id_vars=["industry", "age_bucket", "tenure"],
-        value_vars=sal_cols,
-        var_name="year",
-        value_name="salary"
-    )
-    sal_long["year"] = sal_long["year"].str.extract(r"(\d+)").astype(int)
-
-    # ==========================================================
-    # 3️⃣ Merge Forecast + Salary
-    # ==========================================================
-    print(emp_long[(emp_long["age_bucket"]=="55-59") &
-                (emp_long["tenure"]==0) &
-                (emp_long["year"]==2025)]["industry"].unique())
-
-    print(df[(df["age_bucket"]=="55-59") &
-            (df["tenure"]==0) &
-            (df["year"]==2025)]["industry"].unique())
-
-
-    for d in [df, emp_long, sal_long]:
-        d[["industry", "age_bucket"]] = d[["industry", "age_bucket"]].apply(lambda x: x.str.strip().str.lower())
-
-    
-    df = df.merge(
-        emp_long,
-        how="left",
-        on=["industry", "age_bucket", "tenure", "year"]
+    sal_long = sal.melt(
+        id_vars=["Industry", "Age_Bracket", "Tenure"],
+        value_vars=salary_cols,
+        var_name="Year",
+        value_name="Salary"
     )
 
-    df = df.merge(
+    sal_long["Year"] = sal_long["Year"].str.extract(r"(\d+)").astype(int)
+
+    # ----------------------------
+    # 3. Merge with survival
+    # ----------------------------
+    merged = surv.merge(
         sal_long,
-        how="left",
-        on=["industry", "age_bucket", "tenure", "year"]
+        on=["Industry", "Age_Bracket", "Tenure", "Year"],
+        how="left"
     )
 
-    df["forecast_employee"] = df["forecast_employee"].fillna(0)
+    return merged
+def attach_employees_to_survival(
+    survival_template_df,
+    employee_forecast_df
+):
+    import pandas as pd
 
-    # ==========================================================
-    # 4️⃣ Attach Exit Rate
-    # ==========================================================
-    df["exit_rate"] = df["total exit (q)"]
+    surv = survival_template_df.copy()
+    emp = employee_forecast_df.copy()
 
-    print(df.columns)
-    # Replacement hiring = exit rate for specific age brackets
-    df["replacement_rate"] = np.where(
-        df["age_bucket"].isin(["<55", "55-59","60-64"]),
-        df["exit_rate"],
-        df["replacement hiring %"]
+    # ----------------------------
+    # 1. Standardize columns
+    # ----------------------------
+    surv.columns = surv.columns.str.strip()
+    emp.columns = emp.columns.str.strip()
+
+    emp = emp.rename(columns={
+        "Age_Brackets": "Age_Bracket"
+    })
+
+    # ----------------------------
+    # 2. Melt employee wide → long
+    # ----------------------------
+    emp_cols = [c for c in emp.columns if c.startswith("Emp_")]
+
+    emp_long = emp.melt(
+        id_vars=["Industry", "Age_Bracket", "Tenure"],
+        value_vars=emp_cols,
+        var_name="Year",
+        value_name="Employees"
     )
 
-    # ==========================================================
-    # 5️⃣ SURVIVAL ENGINE
-    # ==========================================================
+    emp_long["Year"] = emp_long["Year"].str.extract(r"(\d+)").astype(int)
 
-    df = df.sort_values(["industry", "age_bucket", "year", "tenure"])
+    # ----------------------------
+    # 3. Keep only non-zero employees
+    # ----------------------------
+    emp_long = emp_long[emp_long["Employees"] > 0]
 
-    df["survived_employee"] = 0.0
-    df["exit_employee"] = 0.0
+    # ----------------------------
+    # 4. Merge into survival template
+    # ----------------------------
+    merged = surv.merge(
+        emp_long,
+        on=["Industry", "Age_Bracket", "Tenure", "Year"],
+        how="left"
+    )
 
-    start_year = df["year"].min()
+    # Replace missing with 0
+    merged["Employees"] = merged["Employees"].fillna(0)
+
+    return merged
 
 
-    for (ind, age), group in df.groupby(["industry", "age_bucket"]):
+def attach_exit_and_replacement(
+    survival_with_employees_df,
+    merged_industry_df
+):
+    import pandas as pd
 
-        group = group.sort_values(["year", "tenure"])
-        prev_year_exits = 0.0
+    surv = survival_with_employees_df.copy()
+    rates = merged_industry_df.copy()
 
-        for year in sorted(group["year"].unique()):
+    # --------------------------------
+    # 1. Standardize column names
+    # --------------------------------
+    surv.columns = surv.columns.str.strip()
+    rates.columns = rates.columns.str.strip()
 
-            year_mask = (
-                (df["industry"] == ind) &
-                (df["age_bucket"] == age) &
-                (df["year"] == year)
-            )
+    # Align naming
+    rates = rates.rename(columns={
+        "Industry": "industry",
+        "Age_Bracket": "age_bracket",
+        "Total Exit (q)": "exit_rate",
+        "Replacement Hiring %": "replacement_rate"
+    })
 
-            year_df = df.loc[year_mask].sort_values("tenure")
+    surv.columns = surv.columns.str.strip().str.lower()
 
-            if year == start_year:
-                # 2025 actual base
-                df.loc[year_mask, "survived_employee"] = year_df["forecast_employee"].values
+    # Lowercase for safe matching
+    surv["industry"] = surv["industry"].astype(str).str.strip().str.lower()
+    surv["age_bracket"] = surv["age_bracket"].astype(str).str.strip().str.lower()
+
+    rates["industry"] = rates["industry"].astype(str).str.strip().str.lower()
+    rates["age_bracket"] = rates["age_bracket"].astype(str).str.strip().str.lower()
+
+    # --------------------------------
+    # 2. Merge Rates
+    # --------------------------------
+    updated = surv.merge(
+        rates[["industry", "age_bracket", "exit_rate", "replacement_rate"]],
+        on=["industry", "age_bracket"],
+        how="left"
+    )
+
+    # --------------------------------
+    # 3. Override Replacement Logic
+    # --------------------------------
+    override_groups = ["<55", "55-59"]
+
+    updated.loc[
+        updated["age_bracket"].isin(override_groups),
+        "replacement_rate"
+    ] = updated["exit_rate"]
+
+    # --------------------------------
+    # 4. Add Exit Mapping Columns
+    # --------------------------------
+    updated["exit_year"] = np.where(updated["year"] < 2040, updated["year"] + 1, np.nan)
+    updated["exit_tenure"] = 0
+
+    return updated
+
+
+def run_full_survival_eosg_model(
+    df,
+    fund_return_rate=0.04,
+    start_year=2025
+):
+
+    df = df.copy()
+    df.columns = df.columns.str.lower().str.strip()
+
+    df = df.sort_values(
+        ["industry", "age_bracket", "cohort", "year"]
+    ).reset_index(drop=True)
+
+    final_blocks = []
+
+    # -----------------------------------------------------
+    # Loop Industry × Age_Bracket
+    # -----------------------------------------------------
+    for (ind, age), block in df.groupby(
+        ["industry", "age_bracket"],
+        sort=False
+    ):
+
+        block = block.sort_values(
+            ["cohort", "year"]
+        )
+
+        exit_pool = {}
+
+        cohort_groups = {
+            c: g.copy()
+            for c, g in block.groupby("cohort")
+        }
+
+        # Phase split
+        phase1 = []
+        phase2 = []
+
+        for c, g in cohort_groups.items():
+            first = g.iloc[0]
+            if first["year"] == start_year and first["tenure"] > 0:
+                phase1.append(c)
             else:
-                # 1️⃣ Rehire prior exits at tenure 0
-                tenure0_mask = year_mask & (df["tenure"] == 0)
+                phase2.append(c)
 
-                incremental_hire = df.loc[tenure0_mask, "forecast_employee"].values
+        # ==================================================
+        # PROCESS ALL COHORTS
+        # ==================================================
+        for cohort_list in [phase1, phase2]:
 
-                df.loc[tenure0_mask, "survived_employee"] = (
-                    prev_year_exits + incremental_hire
-                )
+            for c in cohort_list:
 
-                # 2️⃣ Survival from prior year
-                prev_mask = (
-                    (df["industry"] == ind) &
-                    (df["age_bucket"] == age) &
-                    (df["year"] == year - 1)
-                )
+                g = cohort_groups[c].copy()
+                g = g.sort_values("year")
 
-                prev_year_df = df.loc[prev_mask]
+                g["survived_employee"] = 0.0
+                g["exit_employee"] = 0.0
 
-                for t in year_df["tenure"]:
-                    if t == 0:
+                # -------------------------------------------
+                # SURVIVAL ENGINE
+                # -------------------------------------------
+                for i in range(len(g)):
+
+                    row = g.iloc[i]
+
+                    if i == 0:
+
+                        if row["year"] == start_year and row["tenure"] > 0:
+                            g.iloc[i, g.columns.get_loc(
+                                "survived_employee")] = row["employees"]
+                        else:
+                            key = (row["year"], row["tenure"])
+                            inflow = exit_pool.get(key, 0)
+                            base = row["employees"]
+                            g.iloc[i, g.columns.get_loc(
+                                "survived_employee")] = base + inflow
+
                         continue
 
-                    prev_survivor = prev_year_df.loc[
-                        prev_year_df["tenure"] == t - 1,
-                        "survived_employee"
-                    ]
+                    prev_surv = g.iloc[i-1]["survived_employee"]
+                    exit_rate = g.iloc[i-1]["exit_rate"]
+                    repl_rate = g.iloc[i-1]["replacement_rate"]
 
-                    if len(prev_survivor) == 0:
-                        continue
+                    survived = prev_surv * (1 - exit_rate)
+                    exit_emp = prev_surv * exit_rate
 
-                    survived = (
-                        prev_survivor.values[0] *
-                        (1 - df.loc[
-                            (year_mask & (df["tenure"] == t)),
-                            "exit_rate"
-                        ].values[0])
+                    if age in ["<55", "55-59"]:
+                        replacement = exit_emp
+                    else:
+                        replacement = exit_emp * repl_rate
+
+                    g.iloc[i, g.columns.get_loc(
+                        "survived_employee")] = survived
+                    g.iloc[i, g.columns.get_loc(
+                        "exit_employee")] = exit_emp
+
+                    key = (
+                        g.iloc[i-1]["exit_year"],
+                        g.iloc[i-1]["exit_tenure"]
                     )
 
-                    df.loc[
-                        (year_mask & (df["tenure"] == t)),
-                        "survived_employee"
-                    ] = survived
+                    exit_pool[key] = exit_pool.get(
+                        key, 0
+                    ) + replacement
 
-            # 3️⃣ Calculate exits
-            prev_mask = (
-                (df["industry"] == ind) &
-                (df["age_bucket"] == age) &
-                (df["year"] == year - 1)
-            )
+                # ==================================================
+                # EOSG CALCULATION
+                # ==================================================
 
-            if year != start_year:
+                def gratuity_rate(tenure):
+                    if tenure < 1:
+                        return 0.0
+                    elif tenure <= 5:
+                        return tenure * 0.05833
+                    elif tenure < 25:
+                        return (5 * 0.05833) + (
+                            (tenure - 5) * 0.08333
+                        )
+                    else:
+                        return (5 * 0.05833) + (
+                            (25 - 5) * 0.08333
+                        )
 
-                prev_df = df.loc[prev_mask]
+                g["gratuity_rate"] = g["tenure"].apply(
+                    gratuity_rate
+                )
 
-                total_exit = 0.0
+                g["gratuity_per_employee"] = (
+                    g["salary"] * g["gratuity_rate"]
+                )
 
-                for t in year_df["tenure"]:
-                    if t == 0:
-                        continue
+                g["prev_gratuity_per_employee"] = (
+                    g["gratuity_per_employee"].shift(1)
+                )
 
-                    prev_emp = prev_df.loc[
-                        prev_df["tenure"] == t - 1,
-                        "survived_employee"
-                    ]
+                g["fund_contribution"] = np.where(
+                    g["prev_gratuity_per_employee"].isna(),
+                    g["gratuity_per_employee"] *
+                    g["survived_employee"],
+                    (g["gratuity_per_employee"]
+                     - g["prev_gratuity_per_employee"])
+                     * g["survived_employee"]
+                )
+                g["fund_contribution"] = np.maximum(g["fund_contribution"], 0)
 
-                    if len(prev_emp) == 0:
-                        continue
+                # ==================================================
+                # FUND ROLL FORWARD
+                # ==================================================
 
-                    exit_emp = (
-                        prev_emp.values[0] -
-                        df.loc[
-                            (year_mask & (df["tenure"] == t)),
-                            "survived_employee"
-                        ].values[0]
+                # Initialize columns
+                g["opening_fund_no_return"] = 0.0
+                g["closing_fund_no_return"] = 0.0
+                g["exit_payout_no_return"] = 0.0
+
+                g["opening_fund_with_return"] = 0.0
+                g["fund_return"] = 0.0
+                g["closing_fund_with_return"] = 0.0
+                g["exit_payout_with_return"] = 0.0
+
+                fund_nr = 0.0
+                fund_wr = 0.0
+
+                for idx in g.index:
+
+                    # -------------------
+                    # WITHOUT RETURN
+                    # -------------------
+                    opening_nr = fund_nr
+
+                    contribution = g.loc[idx,
+                                         "fund_contribution"]
+
+                    fund_nr += contribution
+
+                    survived = g.loc[idx,
+                                     "survived_employee"]
+                    exited = g.loc[idx,
+                                   "exit_employee"]
+
+                    exit_ratio = (
+                        exited / survived
+                        if survived > 0 else 0
                     )
 
-                    exit_emp = max(exit_emp, 0)
+                    payout_nr = fund_nr * exit_ratio
+                    fund_nr -= payout_nr
 
-                    df.loc[
-                        (year_mask & (df["tenure"] == t)),
-                        "exit_employee"
-                    ] = exit_emp
+                    # -------------------
+                    # WITH RETURN
+                    # -------------------
+                    opening_wr = fund_wr
 
-                    total_exit += exit_emp
+                    fund_return = fund_wr * fund_return_rate
+                    fund_wr += fund_return
+                    fund_wr += contribution
 
-                prev_year_exits = total_exit
-            else:
-                prev_year_exits = 0.0
+                    payout_wr = fund_wr * exit_ratio
+                    fund_wr -= payout_wr
 
-    final_df = df.copy()
+                    # -------------------
+                    # STORE
+                    # -------------------
+                    g.loc[idx, [
+                        "opening_fund_no_return",
+                        "exit_payout_no_return",
+                        "closing_fund_no_return",
+                        "opening_fund_with_return",
+                        "fund_return",
+                        "exit_payout_with_return",
+                        "closing_fund_with_return"
+                    ]] = [
+                        opening_nr,
+                        payout_nr,
+                        fund_nr,
+                        opening_wr,
+                        fund_return,
+                        payout_wr,
+                        fund_wr
+                    ]
 
-    # ==========================================================
-    # 6️⃣ GRATUITY (UNCHANGED)
-    # ==========================================================
-    def gratuity_rate(tenure):
-        if tenure < 1:
-            return 0.0
-        elif tenure <= 5:
-            return tenure * 0.05833
-        elif tenure < 25:
-            return (5 * 0.05833) + ((tenure - 5) * 0.08333)
-        else:
-            return (5 * 0.05833) + ((25 - 5) * 0.08333)
+                final_blocks.append(g)
 
-    final_df["gratuity_rate"] = final_df["tenure"].apply(gratuity_rate)
-    final_df["gratuity_per_employee"] = (
-        final_df["salary"] * final_df["gratuity_rate"]
-    )
-
-    # ==========================================================
-    # 7️⃣ FUND CONTRIBUTION (UNCHANGED)
-    # ==========================================================
-
-        # Create diagonal cohort key
-    final_df["tenure_start"] = final_df["year"] - final_df["tenure"]
-
-    # Sort by cohort path
-    final_df = final_df.sort_values(
-        ["industry", "age_bucket", "tenure_start", "year"]
-    )
-
-    # Rolling gratuity within cohort
-    final_df["prev_gratuity_per_employee"] = final_df.groupby(
-        ["industry", "age_bucket", "tenure_start"]
-    )["gratuity_per_employee"].shift(1)
-
-    # Contribution calculation
-    final_df["fund_contribution"] = np.where(
-        final_df["prev_gratuity_per_employee"].isna(),
-        final_df["gratuity_per_employee"] * final_df["survived_employee"],
-        (final_df["gratuity_per_employee"]
-        - final_df["prev_gratuity_per_employee"])
-        * final_df["survived_employee"]
-    )
-
-    final_df["fund_contribution"] = final_df["fund_contribution"].clip(lower=0)
-
-    # ==========================================================
-    # 8️⃣ FUND ROLL FORWARD (IDENTICAL STRUCTURE)
-    # ==========================================================
-
-    final_df["opening_fund_no_return"] = 0.0
-    final_df["opening_fund_with_return"] = 0.0
-    final_df["fund_return"] = 0.0
-    final_df["accumulated_fund_no_return"] = 0.0
-    final_df["accumulated_fund_with_return"] = 0.0
-    final_df["exit_payout_no_return"] = 0.0
-    final_df["exit_payout_with_return"] = 0.0
-    final_df["closing_fund_no_return"] = 0.0
-    final_df["closing_fund_with_return"] = 0.0
-
-
-    
-
-    for (ind, age, cohort), group in final_df.groupby(
-        ["industry", "age_bucket", "tenure_start"]):
-
-        group = group.sort_values("year")
-        fund_nr = 0.0
-        fund_wr = 0.0
-
-        for idx, row in group.iterrows():
-
-            opening_nr = fund_nr
-            opening_wr = fund_wr
-
-            fund_return = fund_wr * fund_return_rate
-            fund_wr += fund_return
-
-            fund_nr += row["fund_contribution"]
-            fund_wr += row["fund_contribution"]
-
-            accumulated_nr = fund_nr
-            accumulated_wr = fund_wr
-
-            exit_ratio = (
-                row["exit_employee"] / row["survived_employee"]
-                if row["survived_employee"] > 0 else 0
-            )
-
-            exit_payout_nr = accumulated_nr * exit_ratio
-            exit_payout_wr = accumulated_wr * exit_ratio
-
-            fund_nr -= exit_payout_nr
-            fund_wr -= exit_payout_wr
-
-            final_df.loc[idx, "opening_fund_no_return"] = opening_nr
-            final_df.loc[idx, "opening_fund_with_return"] = opening_wr
-            final_df.loc[idx, "fund_return"] = fund_return
-            final_df.loc[idx, "accumulated_fund_no_return"] = accumulated_nr
-            final_df.loc[idx, "accumulated_fund_with_return"] = accumulated_wr
-            final_df.loc[idx, "exit_payout_no_return"] = exit_payout_nr
-            final_df.loc[idx, "exit_payout_with_return"] = exit_payout_wr
-            final_df.loc[idx, "closing_fund_no_return"] = fund_nr
-            final_df.loc[idx, "closing_fund_with_return"] = fund_wr
+    final_df = pd.concat(
+        final_blocks
+    ).reset_index(drop=True)
 
     return final_df
 
-
-def aggregate_industry_year(df):
+def aggregate_industry_year_combined(df):
     """
-    Aggregates Industry × Year metrics.
+    Aggregates Industry × Year metrics
+    for full survival + EOSG output.
     """
 
-    def industry_year_aggregation(group):
+    df = df.copy()
 
-        total_emp = group["survived_employee"].sum()
-
-        weighted_salary = (
-            (group["salary"] * group["survived_employee"]).sum()
-            / total_emp if total_emp > 0 else 0
-        )
-
-        annual_total_salary = (
-            group["salary"] * group["survived_employee"] * 12
-        ).sum()
-
-        weighted_gratuity = (
-            (group["gratuity_per_employee"] * group["survived_employee"]).sum()
-            / total_emp if total_emp > 0 else 0
-        )
-
-        annual_total_gratuity = (
-            group["gratuity_per_employee"] * group["survived_employee"] * 12
-        ).sum()
-
-        return pd.Series({
-            "total_employees": total_emp,
-            "weighted_monthly_salary": weighted_salary,
-            "annual_total_salary": annual_total_salary,
-            "weighted_monthly_gratuity_per_employee": weighted_gratuity,
-            "annual_total_gratuity_accrual": annual_total_gratuity,
-            "annual_fund_contribution": group["fund_contribution"].sum(),
-            "closing_fund_no_return": group["closing_fund_no_return"].sum(),
-            "closing_fund_with_return": group["closing_fund_with_return"].sum()
-        })
-
-    return (
-        df.groupby(["industry", "year"])
-          .apply(industry_year_aggregation)
-          .reset_index()
+    # ==========================================================
+    # 1. PRE-CALCULATIONS
+    # ==========================================================
+    df["salary_x_emp"] = (
+        df["salary"] * df["survived_employee"]
     )
 
-def aggregate_industry_year_tenure(df):
-    """
-    Aggregates Industry × Year × Tenure metrics.
-    """
-
-    def aggregate_group(group):
-
-        total_emp = group["survived_employee"].sum()
-
-        weighted_salary = (
-            (group["salary"] * group["survived_employee"]).sum()
-            / total_emp if total_emp > 0 else 0
-        )
-
-        annual_total_salary = (
-            group["salary"] * group["survived_employee"] * 12
-        ).sum()
-
-        weighted_gratuity = (
-            (group["gratuity_per_employee"] * group["survived_employee"]).sum()
-            / total_emp if total_emp > 0 else 0
-        )
-
-        annual_total_gratuity = (
-            group["gratuity_per_employee"] * group["survived_employee"] * 12
-        ).sum()
-
-        return pd.Series({
-            "total_employees": total_emp,
-            "weighted_monthly_salary": weighted_salary,
-            "annual_total_salary": annual_total_salary,
-            "weighted_monthly_gratuity_per_employee": weighted_gratuity,
-            "annual_total_gratuity_accrual": annual_total_gratuity,
-            "annual_fund_contribution": group["fund_contribution"].sum(),
-            "closing_fund_no_return": group["closing_fund_no_return"].sum(),
-            "closing_fund_with_return": group["closing_fund_with_return"].sum()
-        })
-
-    return (
-        df.groupby(["industry", "year", "tenure"])
-          .apply(aggregate_group)
-          .reset_index()
+    df["gratuity_x_emp"] = (
+        df["gratuity_per_employee"] *
+        df["survived_employee"]
     )
 
-def apply_economic_impact(
+    df["annual_salary_total"] = (
+        df["salary_x_emp"] * 12
+    )
+
+    df["annual_gratuity_total"] = (
+        df["gratuity_x_emp"] * 12
+    )
+
+    # ==========================================================
+    # 2. GROUP & SUM
+    # ==========================================================
+    grouped = df.groupby(
+        ["industry", "year"],
+        as_index=False
+    ).agg(
+        total_employees=("survived_employee", "sum"),
+        salary_weighted_sum=("salary_x_emp", "sum"),
+        annual_total_salary=("annual_salary_total", "sum"),
+        gratuity_weighted_sum=("gratuity_x_emp", "sum"),
+        annual_total_gratuity_accrual=("annual_gratuity_total", "sum"),
+        annual_fund_contribution=("fund_contribution", "sum"),
+        closing_fund_no_return=("closing_fund_no_return", "sum"),
+        closing_fund_with_return=("closing_fund_with_return", "sum"),
+        exit_employee_total=("exit_employee", "sum")
+    )
+
+    # ==========================================================
+    # 3. WEIGHTED AVERAGES
+    # ==========================================================
+    grouped["weighted_monthly_salary"] = np.where(
+        grouped["total_employees"] > 0,
+        grouped["salary_weighted_sum"] /
+        grouped["total_employees"],
+        0
+    )
+
+    grouped["weighted_monthly_gratuity_per_employee"] = np.where(
+        grouped["total_employees"] > 0,
+        grouped["gratuity_weighted_sum"] /
+        grouped["total_employees"],
+        0
+    )
+
+    # ==========================================================
+    # 4. OPTIONAL FUND GAP METRICS (Helpful for analysis)
+    # ==========================================================
+    grouped["fund_gap_no_return"] = (
+        grouped["annual_total_gratuity_accrual"] -
+        grouped["closing_fund_no_return"]
+    )
+
+    grouped["fund_gap_with_return"] = (
+        grouped["annual_total_gratuity_accrual"] -
+        grouped["closing_fund_with_return"]
+    )
+
+    # ==========================================================
+    # 5. FINAL COLUMN ORDER
+    # ==========================================================
+    grouped = grouped[[
+        "industry",
+        "year",
+        "total_employees",
+        "exit_employee_total",
+        "weighted_monthly_salary",
+        "annual_total_salary",
+        "weighted_monthly_gratuity_per_employee",
+        "annual_total_gratuity_accrual",
+        "annual_fund_contribution",
+        "closing_fund_no_return",
+        "closing_fund_with_return",
+        "fund_gap_no_return",
+        "fund_gap_with_return"
+    ]]
+
+    return grouped
+
+def apply_economic_impact_combined(
     industry_year_df,
     economic_df,
     leakage_rate=0.28
 ):
     """
-    Applies economic multipliers and impact logic.
+    Applies economic multipliers to
+    Industry × Year aggregated survival output.
     """
 
     df = industry_year_df.copy()
-    economic_df = economic_df.copy()
+    econ = economic_df.copy()
 
-    economic_df["Industry"] = economic_df["Industry"].str.lower().str.strip()
-    df["industry"] = df["industry"].str.lower().str.strip()
+    # ==========================================================
+    # 1. STANDARDIZE KEYS
+    # ==========================================================
+    df["industry"] = (
+        df["industry"].astype(str)
+        .str.strip()
+        .str.lower()
+    )
 
+    econ["industry"] = (
+        econ["Industry"].astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    # ==========================================================
+    # 2. MERGE ECONOMIC PARAMETERS
+    # ==========================================================
     df = df.merge(
-        economic_df,
-        left_on="industry",
-        right_on="Industry",
+        econ,
+        on="industry",
         how="left"
     )
 
-    # Year totals
-    df["yearly_total_payroll"] = (
-        df.groupby("year")["annual_total_salary"].transform("sum")
+    # ==========================================================
+    # 3. YEAR TOTALS (VECTORIZE ONCE)
+    # ==========================================================
+    yearly_totals = df.groupby(
+        "year",
+        as_index=False
+    ).agg(
+        yearly_total_payroll=("annual_total_salary", "sum"),
+        yearly_total_contribution=("annual_fund_contribution", "sum")
     )
 
-    df["yearly_total_contribution"] = (
-        df.groupby("year")["annual_fund_contribution"].transform("sum")
+    df = df.merge(
+        yearly_totals,
+        on="year",
+        how="left"
     )
 
-    df["Contrib_Allocated"] = (
+    # ==========================================================
+    # 4. CONTRIBUTION ALLOCATION
+    # ==========================================================
+    df["contribution_allocated"] = np.where(
+        df["yearly_total_payroll"] > 0,
         df["yearly_total_contribution"]
         * df["annual_total_salary"]
-        / df["yearly_total_payroll"]
-    ).fillna(0)
-
-    # Economic impact
-    df["Net_New_Saving"] = df["Contrib_Allocated"]
-    df["Leakage_Assumption"] = leakage_rate
-    df["Domestic_Investable"] = (
-        df["Net_New_Saving"] * (1 - leakage_rate)
+        / df["yearly_total_payroll"],
+        0
     )
 
-    df["Output_Impact"] = (
+    # ==========================================================
+    # 5. ECONOMIC IMPACT CALCULATIONS
+    # ==========================================================
+
+    # Net new savings entering system
+    df["net_new_saving"] = df["contribution_allocated"]
+
+    # Leakage assumption
+    df["leakage_assumption"] = leakage_rate
+
+    # Domestic investable portion
+    df["domestic_investable"] = (
+        df["net_new_saving"] * (1 - leakage_rate)
+    )
+
+    # Output impact
+    df["output_impact"] = (
         df["Output_Multiplier_Type_I"]
-        * df["Domestic_Investable"]
+        * df["domestic_investable"]
     )
 
-    df["GVA_Impact"] = (
+    # GVA impact
+    df["gva_impact"] = (
         df["GVA_to_Output_Ratio"]
-        * df["Domestic_Investable"]
+        * df["domestic_investable"]
     )
 
-    df["Jobs_Impact"] = (
+    # Jobs impact
+    df["jobs_impact"] = (
         df["Employment_Multiplier (jobs per AED 1M output)"]
-        * (df["Domestic_Investable"] / 1_000_000)
+        * (df["domestic_investable"] / 1_000_000)
     )
+
+    # ==========================================================
+    # 6. FINAL OUTPUT ORDER
+    # ==========================================================
+    df = df[[
+        "industry",
+        "year",
+        "total_employees",
+        "annual_total_salary",
+        "annual_fund_contribution",
+        "closing_fund_with_return",
+        "net_new_saving",
+        "domestic_investable",
+        "output_impact",
+        "gva_impact",
+        "jobs_impact"
+    ]]
 
     return df
