@@ -528,7 +528,7 @@ def attach_exit_and_replacement(
     # --------------------------------
     # 3. Override Replacement Logic
     # --------------------------------
-    override_groups = ["<55", "55-59"]
+    override_groups = ["<55", "55-59","60-64","65-69","70+"]
 
     updated.loc[
         updated["age_bracket"].isin(override_groups),
@@ -630,7 +630,7 @@ def run_full_survival_eosg_model(
                     survived = prev_surv * (1 - exit_rate)
                     exit_emp = prev_surv * exit_rate
 
-                    if age in ["<55", "55-59"]:
+                    if age in ["<55", "55-59","60-64","65-69","70+"]:
                         replacement = exit_emp
                     else:
                         replacement = exit_emp * repl_rate
@@ -1086,5 +1086,6 @@ def generate_cohort_fund_scenarios(combined_df):
     final_df = pd.concat(result_blocks).reset_index(drop=True)
 
     return final_df
+
 
 
