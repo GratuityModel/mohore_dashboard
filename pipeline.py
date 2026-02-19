@@ -627,13 +627,13 @@ def run_full_survival_eosg_model(
                     exit_rate = g.iloc[i-1]["exit_rate"]
                     repl_rate = g.iloc[i-1]["replacement_rate"]
 
-                    survived = prev_surv * (1 - exit_rate)
-                    exit_emp = prev_surv * exit_rate
+                    survived = round(prev_surv * (1 - exit_rate),0)
+                    exit_emp = round(prev_surv * exit_rate,0)
 
                     if age in ["<55", "55-59","60-64","65-69","70+"]:
                         replacement = exit_emp
                     else:
-                        replacement = exit_emp * repl_rate
+                        replacement = round(exit_emp * repl_rate,0)
 
                     g.iloc[i, g.columns.get_loc(
                         "survived_employee")] = survived
@@ -1046,10 +1046,12 @@ def generate_cohort_fund_scenarios(combined_df):
                 # ---------------------------------------------
                 # Exit payout logic
                 # ---------------------------------------------
-                if survivors > 0:
-                    exit_ratio = exits / survivors
+                total_before_exit = survivors + exits
+
+                if total_before_exit > 0:
+                    exit_ratio = exits / total_before_exit
                 else:
-                    exit_ratio = 0
+                    exit_ratio = 0.0
 
                 payout = fund * exit_ratio
                 fund_after_exit = fund - payout
@@ -1086,6 +1088,5 @@ def generate_cohort_fund_scenarios(combined_df):
     final_df = pd.concat(result_blocks).reset_index(drop=True)
 
     return final_df
-
 
 
