@@ -1567,6 +1567,12 @@ with main_col:
             ]
 
             if df.empty:
+                st.stop()
+
+
+            survivors = df["survived_employee"].sum()
+
+            if survivors == 0:
                 st.markdown("""
                 <div style="
                     background-color:#FDECEC;
@@ -1582,13 +1588,6 @@ with main_col:
                     All employees have exited before this year.
                 </div>
                 """, unsafe_allow_html=True)
-                st.stop()
-
-
-            survivors = df["survived_employee"].sum()
-
-            if survivors == 0:
-                st.warning("No surviving employees.")
                 st.stop()
         
             per_0 = df["fund_0_exit_adj"].sum() / survivors
@@ -1667,6 +1666,7 @@ with main_col:
             """
         )
     
+
 
 
 
