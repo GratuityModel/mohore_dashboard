@@ -1566,9 +1566,24 @@ with main_col:
                 (df["tenure"] == sim_tenure)
             ]
 
-            if df.empty:
-                st.warning("No data available for this tenure.")
+            if survivors == 0:
+                st.markdown("""
+                <div style="
+                    background-color:#FDECEC;
+                    border-left:6px solid #C62828;
+                    padding:16px;
+                    border-radius:8px;
+                    font-weight:600;
+                    color:#7A0000;
+                    margin-top:10px;
+                    margin-bottom:15px;
+                ">
+                    ⚠ No surviving employees for selected tenure.<br>
+                    All employees have exited before this year.
+                </div>
+                """, unsafe_allow_html=True)
                 st.stop()
+
 
             survivors = df["survived_employee"].sum()
 
@@ -1652,4 +1667,5 @@ with main_col:
             """
         )
     
+
 
