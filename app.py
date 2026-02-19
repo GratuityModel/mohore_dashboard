@@ -1542,7 +1542,7 @@ with main_col:
             # Cohort Filter (2025_0)
             # ---------------------------
             df = df[df["cohort"] == "2025_0"]
-    
+            st.write(df.head())
             
             # ---------------------------
             # Year & Tenure Filter
@@ -1652,4 +1652,5 @@ with main_col:
             """
         )
     
+
 
