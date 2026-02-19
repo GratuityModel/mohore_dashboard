@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -434,6 +434,14 @@ with main_col:
             INDUSTRY_RATES
         )
 
+    @st.cache_data
+    def load_economic():
+        df = pd.read_excel(ECONOMIC_FILE)
+        df["Industry"] = df["Industry"].str.lower().str.strip()
+        return df
+
+    economic_master = load_economic()
+
 
     merged_df = load_base()
     # Optimize types for faster groupby/merge
@@ -606,7 +614,7 @@ with main_col:
 
         impact_df = apply_economic_impact_combined(
             industry_year,
-            pd.read_excel(ECONOMIC_FILE),
+            economic_master,
             leakage_rate
         )
 
@@ -616,7 +624,7 @@ with main_col:
             "jobs_impact": "Jobs_Impact"
         })
 
-        economic_df = pd.read_excel(ECONOMIC_FILE)
+        economic_df = economic_master.copy()
 
         economic_df["Industry"] = economic_df["Industry"].str.lower().str.strip()
 
@@ -1068,40 +1076,18 @@ with main_col:
 
 
     print(st.session_state.industry_assumptions.equals(merged_df))
-    # ==========================================================
-    # DYNAMIC SCENARIO (FULL ENGINE RUN ONCE, CACHED)
-    # ==========================================================
-    # Create a unique key based on current parameters
-    import hashlib
-    import pickle
-    def get_engine_key(assumptions, fund_return, leakage):
-        # Use a hash of the assumptions DataFrame and parameters
-        assumptions_bytes = pickle.dumps(assumptions)
-        key_str = assumptions_bytes + str(fund_return).encode() + str(leakage).encode()
-        return hashlib.md5(key_str).hexdigest()
+    combined_full, industry_full, impact_full = run_full_engine(
+        st.session_state.industry_assumptions,
+        fund_return,
+        leakage
+    )
 
-    engine_key = get_engine_key(st.session_state.industry_assumptions, fund_return, leakage)
+    @st.cache_data(show_spinner=False)
+    def run_fund_scenarios(df):
+        return generate_cohort_fund_scenarios(df)
 
-    if 'dynamic_engine_cache' not in st.session_state:
-        st.session_state.dynamic_engine_cache = {}
-
-    if engine_key not in st.session_state.dynamic_engine_cache:
-        st.session_state.dynamic_engine_cache[engine_key] = run_full_engine(
-            st.session_state.industry_assumptions,
-            fund_return,
-            leakage
-        )
-
-    combined_full, industry_full, impact_full = st.session_state.dynamic_engine_cache[engine_key]
-
-    if "fund_scenarios_cache" not in st.session_state:
-        st.session_state.fund_scenarios_cache = {}
-
-    if engine_key not in st.session_state.fund_scenarios_cache:
-        st.session_state.fund_scenarios_cache[engine_key] = \
-            generate_cohort_fund_scenarios(combined_full)
-
-    fund_scenarios_full = st.session_state.fund_scenarios_cache[engine_key]
+    fund_scenarios_full = run_fund_scenarios(combined_full)
+  
     selected_industry_lower = selected_industry.lower()
     
     selected_age_lower = selected_age.lower()
@@ -1567,12 +1553,6 @@ with main_col:
             ]
 
             if df.empty:
-                st.stop()
-
-
-            survivors = df["survived_employee"].sum()
-
-            if survivors == 0:
                 st.markdown("""
                 <div style="
                     background-color:#FDECEC;
@@ -1589,13 +1569,19 @@ with main_col:
                 </div>
                 """, unsafe_allow_html=True)
                 st.stop()
+
+            survivors = df["survived_employee"].sum()
+
+            if survivors == 0:
+                st.warning("No surviving employees.")
+                st.stop()
         
             per_0 = df["fund_0_exit_adj"].sum() / survivors
             # 4%, 6%, 8% per person
             per_4 = df["fund_4_exit_adj"].sum() / survivors
             per_6 = df["fund_6_exit_adj"].sum() / survivors
             per_8 = df["fund_8_exit_adj"].sum() / survivors
-
+            
             st.markdown("### Projected Benefit Per Employee (AED)")
 
             c0, c1, c2, c3, c4 = st.columns(5)
@@ -1666,7 +1652,3 @@ with main_col:
             """
         )
     
-
-
-
-
