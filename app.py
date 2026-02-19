@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -1652,4 +1652,3 @@ with main_col:
             """
         )
     
-
