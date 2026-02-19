@@ -1566,7 +1566,7 @@ with main_col:
                 (df["tenure"] == sim_tenure)
             ]
 
-            if survivors == 0:
+            if df.empty:
                 st.markdown("""
                 <div style="
                     background-color:#FDECEC;
@@ -1667,5 +1667,6 @@ with main_col:
             """
         )
     
+
 
 
