@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from pipeline import *
+from pipeline2 import *
 from PIL import Image
 
 # ==========================================================
@@ -1542,7 +1542,7 @@ with main_col:
             # Cohort Filter (2025_0)
             # ---------------------------
             df = df[df["cohort"] == "2025_0"]
-            st.write(df.head())
+    
             
             # ---------------------------
             # Year & Tenure Filter
@@ -1652,5 +1652,3 @@ with main_col:
             """
         )
     
-
-
