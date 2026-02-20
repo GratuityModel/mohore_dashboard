@@ -1494,7 +1494,7 @@ with main_col:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        st.caption("""                
+        st.caption("""              
                     **Note:** Payroll and EOSG fund balances are calculated at the Industry level.
                     Age bracket selection applies only to workforce-level views and does not
                     change aggregate Industry totals shown here.
@@ -1572,9 +1572,9 @@ with main_col:
 
             survivors = df["survived_employee"].sum()
 
-            if survivors == 0:
-                st.warning("No surviving employees.")
-                st.stop()
+            # if survivors == 0:
+            #     st.warning("No surviving employees.")
+            #     st.stop()
         
             per_0 = df["fund_0_exit_adj"].sum() / survivors
             # 4%, 6%, 8% per person
@@ -1652,4 +1652,5 @@ with main_col:
             """
         )
     
+
 
