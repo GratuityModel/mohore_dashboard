@@ -252,8 +252,12 @@ def generate_employee_salary_forecast(
         df.groupby(
             ["Industry", "Age_Brackets", "Tenure"],
             as_index=False
-        )[salary_cols]
-        .first()
+        )
+        .apply(lambda x: pd.Series({
+            col: (x[col] * x["Employees"]).sum() / x["Employees"].sum()
+            for col in salary_cols
+        }))
+        .reset_index()
     )
     salary_agg = salary_agg[
         ["Industry", "Age_Brackets", "Tenure"] +
@@ -1074,5 +1078,6 @@ def generate_cohort_fund_scenarios(combined_df):
     final_df = pd.concat(result_blocks).reset_index(drop=True)
 
     return final_df
+
 
 
