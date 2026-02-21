@@ -1552,7 +1552,7 @@ with main_col:
 
         c3.plotly_chart(fig_jobs, use_container_width=True)
 
-        st.caption("Note: Economic impact displayed at Sector level. Industry filter not applied. Age filter applied if selected.")
+        st.caption("Note: Economic impact displayed at Sector level. Industry and Age filter not applied.")
     with tabs[3]:
 
         st.markdown("### EOSG & Payroll")
@@ -1787,5 +1787,6 @@ with main_col:
             """
         )
     
+
 
 
