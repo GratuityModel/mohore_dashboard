@@ -656,20 +656,21 @@ with main_col:
             # --------------------------------------------------
 
             exp = st.number_input(
-                "Expansion Hiring %",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(row["Expansion Hiring %"]),
-                step=0.01
-            )
-
+                "Expansion Hiring (%)",
+                min_value=0,
+                max_value=100,
+                value=int(row["Expansion Hiring %"] * 100),
+                step=1
+            ) / 100.0
+            
+            
             sal_g = st.number_input(
-                "Salary Growth %",
-                min_value=0.0,
-                max_value=0.20,
-                value=float(row["Salary Growth %"]),
-                step=0.005
-            )
+                "Salary Growth (%)",
+                min_value=0,
+                max_value=20,
+                value=int(row["Salary Growth %"] * 100),
+                step=1
+            ) / 100.0
 
             # --------------------------------------------------
             # Update Button
@@ -1798,3 +1799,4 @@ with main_col:
             """
         )
     
+
