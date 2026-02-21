@@ -409,38 +409,42 @@ with calc_col:
             unsafe_allow_html=True
         )
 
+INDUSTRY_DESC = "data/Industry Desc.csv"
+INDUSTRY_RATES = "data/P2 Industry rates.csv"
+EMPLOYEE_SALARY = "data/Employee_Salary_Data_2025.csv"
+META_INFO = "data/Meta_info.csv"
+ECONOMIC_FILE = "data/Economic Parameters.csv"
+@st.cache_data
+def load_employee():
+    return pd.read_csv(EMPLOYEE_SALARY)
 
+@st.cache_data
+def load_meta():
+    return pd.read_csv(META_INFO)
 
+@st.cache_data
+def load_economic():
+    df = pd.read_csv(ECONOMIC_FILE)
+    df["Industry"] = df["Industry"].str.lower().str.strip()
+    return df
 
+employee_master = load_employee()
+meta_master = load_meta()
+economic_master = load_economic()
 with main_col:
-    # ==========================================================
-    # FILES
-    # ==========================================================
-
-    INDUSTRY_DESC = "data/Industry Desc.xlsx"
-    INDUSTRY_RATES = "data/P2 Industry rates.xlsx"
-    EMPLOYEE_SALARY = "data/Employee_Salary_Data_2025.xlsx"
-    META_INFO = "data/Meta_info.csv"
-    ECONOMIC_FILE = "data/Economic Parameters.xlsx"
-
     # ==========================================================
     # LOAD BASE DATA
     # ==========================================================
 
     @st.cache_data
     def load_base():
+        industry_desc_df = pd.read_csv(INDUSTRY_DESC)
+        industry_rates_df = pd.read_csv(INDUSTRY_RATES)
+
         return generate_merged_industry_data(
-            INDUSTRY_DESC,
-            INDUSTRY_RATES
+            industry_desc_df,
+            industry_rates_df
         )
-
-    @st.cache_data
-    def load_economic():
-        df = pd.read_excel(ECONOMIC_FILE)
-        df["Industry"] = df["Industry"].str.lower().str.strip()
-        return df
-
-    economic_master = load_economic()
 
 
     merged_df = load_base()
@@ -453,87 +457,6 @@ with main_col:
 
     if "industry_assumptions" not in st.session_state:
         st.session_state.industry_assumptions = merged_df.copy()
-
-    # ==========================================================
-    # LOAD SURVIVAL TEMPLATES
-    # ==========================================================
-
-    @st.cache_data
-    def load_template():
-        return generate_survival_template_cohort_style(META_INFO)
-
-    survival_template = load_template()
-
-
-    # ==========================================================
-    # ECONOMIC LAYER (SectorMap Based)
-    # ==========================================================
-
-    @st.cache_data
-    def run_economic_layer(industry_year_df, economic_file, leakage_rate):
-
-        economic_df = pd.read_excel(economic_file)
-
-        df = industry_year_df.copy()
-
-        # Normalize
-        df["industry"] = df["industry"].str.lower().str.strip()
-        economic_df["Industry"] = economic_df["Industry"].str.lower().str.strip()
-
-        # Map industry → SectorMap
-        df = df.merge(
-            economic_df[["Industry", "SectorMap"]],
-            left_on="industry",
-            right_on="Industry",
-            how="left"
-        )
-
-        # Sector multipliers
-        sector_mult = economic_df[[
-            "SectorMap",
-            "Output_Multiplier_Type_I",
-            "GVA_to_Output_Ratio",
-            "Employment_Multiplier (jobs per AED 1M output)"
-        ]].drop_duplicates()
-
-        df = df.merge(sector_mult, on="SectorMap", how="left")
-
-        # Allocate contribution proportionally
-        df["yearly_total_payroll"] = (
-            df.groupby("year")["annual_total_salary"].transform("sum")
-        )
-
-        df["yearly_total_contribution"] = (
-            df.groupby("year")["annual_fund_contribution"].transform("sum")
-        )
-
-        df["Contrib_Allocated"] = (
-            df["yearly_total_contribution"]
-            * df["annual_total_salary"]
-            / df["yearly_total_payroll"]
-        ).fillna(0)
-
-        df["Domestic_Investable"] = (
-            df["Contrib_Allocated"] * (1 - leakage_rate)
-        )
-
-        # Economic Impacts
-        df["Output_Impact"] = (
-            df["Output_Multiplier_Type_I"] * df["Domestic_Investable"]
-        )
-
-        df["GVA_Impact"] = (
-            df["GVA_to_Output_Ratio"] * df["Domestic_Investable"]
-        )
-
-        df["Jobs_Impact"] = (
-            df["Employment_Multiplier (jobs per AED 1M output)"]
-            * (df["Domestic_Investable"]/ 1_000_000)
-        )
-
-        return df
-
-
 
     # ==========================================================
     # ENGINE FUNCTIONS
@@ -549,7 +472,7 @@ with main_col:
         # ==========================================================
 
         emp_forecast, sal_forecast = generate_employee_salary_forecast(
-            EMPLOYEE_SALARY,
+            employee_master,
             industry_assumptions,
             start_year=BASE_YEAR
         )
@@ -559,7 +482,7 @@ with main_col:
         # ==========================================================
 
         survival_template = generate_survival_template_cohort_style(
-            META_INFO,
+            meta_master,
             start_year=BASE_YEAR
         )
 
@@ -626,8 +549,6 @@ with main_col:
 
         economic_df = economic_master.copy()
 
-        economic_df["Industry"] = economic_df["Industry"].str.lower().str.strip()
-
         impact_df = impact_df.merge(
             economic_df[["Industry", "SectorMap"]],
             left_on="industry",
@@ -650,7 +571,8 @@ with main_col:
 
 
     # ==========================================================
-    # SIDEBAR – FULL ASSUMPTION PANEL (UPDATED)
+    # SIDEBAR – INDUSTRY ASSUMPTIONS (CLEAN VERSION)
+    # Editable: Expansion Hiring % + Salary Growth %
     # ==========================================================
 
     with st.sidebar:
@@ -660,18 +582,27 @@ with main_col:
         # ------------------------------------------------------
         # Industry Selection
         # ------------------------------------------------------
-        selected_industry = st.selectbox(
-            "Industry",
-            sorted(st.session_state.industry_assumptions["Industry"].unique())
+
+        industry_list = sorted(
+            st.session_state.industry_assumptions["Industry"].unique()
         )
 
-        industry_df = st.session_state.industry_assumptions[
-            st.session_state.industry_assumptions["Industry"] == selected_industry
-        ]
+        selected_industry = st.selectbox(
+            "Industry",
+            ["All Industries"] + industry_list
+        )
 
         # ------------------------------------------------------
-        # Age Selection
+        # Age Selection (Fixed Logic)
         # ------------------------------------------------------
+
+        if selected_industry == "All Industries":
+            industry_df = st.session_state.industry_assumptions.copy()
+        else:
+            industry_df = st.session_state.industry_assumptions[
+                st.session_state.industry_assumptions["Industry"] == selected_industry
+            ]
+
         age_options = ["All"] + sorted(industry_df["Age_Bracket"].unique())
 
         selected_age = st.selectbox(
@@ -679,96 +610,61 @@ with main_col:
             age_options
         )
 
-        st.markdown("### Input Parameters")
+        st.markdown("### Editable Parameters")
 
         # ======================================================
-        # WHEN AGE = ALL → DO NOT SHOW ASSUMPTIONS
+        # IF AGE = ALL → NO EDITING
         # ======================================================
         if selected_age == "All":
 
-            st.markdown("""
-            <div style="
-                background-color:#E3F2FD;
-                border-left:6px solid #053048;
-                padding:12px;
-                border-radius:8px;
-                font-weight:600;
-                color:#053048;
-                margin-bottom:10px;
-            ">
-            ℹ Assumptions must be edited at specific age bracket level.
-            Please select an age group to modify parameters.
-            </div>
-            """, unsafe_allow_html=True)
+            st.info(
+                "Assumptions can only be edited at specific Age Bracket level."
+            )
 
         # ======================================================
-        # WHEN SPECIFIC AGE IS SELECTED
+        # SPECIFIC AGE SELECTED
         # ======================================================
         else:
 
-            row_idx = industry_df[
-                industry_df["Age_Bracket"] == selected_age
-            ].index[0]
+            # Get selected row
+            row_mask = (
+                (industry_df["Age_Bracket"] == selected_age)
+            )
 
+            row_idx = industry_df[row_mask].index[0]
             row = st.session_state.industry_assumptions.loc[row_idx]
+
+            # --------------------------------------------------
+            # ONLY Editable Fields
+            # --------------------------------------------------
 
             exp = st.number_input(
                 "Expansion Hiring %",
-                0.0, 1.0,
-                float(row["Expansion Hiring %"]),
-                step=0.01
-            )
-
-            rep = st.number_input(
-                "Replacement Hiring %",
-                0.0, 1.0,
-                float(row["Replacement Hiring %"]),
-                step=0.01
-            )
-
-            attr = st.number_input(
-                "Attrition %",
-                0.0, 1.0,
-                float(row["Attrition %"]),
-                step=0.01
-            )
-
-            ret = st.number_input(
-                "Retirement Rate",
-                0.0, 1.0,
-                float(row["Retirement Rate"]),
-                step=0.01
-            )
-
-            death = st.number_input(
-                "Death Rate",
-                0.0, 1.0,
-                float(row["Death Rate"]),
+                min_value=0.0,
+                max_value=1.0,
+                value=float(row["Expansion Hiring %"]),
                 step=0.01
             )
 
             sal_g = st.number_input(
                 "Salary Growth %",
-                0.0, 0.20,
-                float(row["Salary Growth %"]),
+                min_value=0.0,
+                max_value=0.20,
+                value=float(row["Salary Growth %"]),
                 step=0.005
             )
 
             # --------------------------------------------------
-            # Update Button (ONLY for specific age)
+            # Update Button
             # --------------------------------------------------
+
             if st.button("Update Assumptions"):
 
                 df = st.session_state.industry_assumptions
 
-                df.loc[row_idx, [
-                    "Expansion Hiring %",
-                    "Replacement Hiring %",
-                    "Attrition %",
-                    "Retirement Rate",
-                    "Death Rate",
-                    "Salary Growth %"
-                ]] = [exp, rep, attr, ret, death, sal_g]
+                # Update ONLY editable fields
+                df.loc[row_idx, "Expansion Hiring %"] = exp
+                df.loc[row_idx, "Salary Growth %"] = sal_g
 
                 # Recalculate derived fields
                 df["Total Hiring %"] = (
@@ -792,6 +688,7 @@ with main_col:
         # ======================================================
         # GLOBAL CONTROLS
         # ======================================================
+
         st.markdown("---")
         st.header("Global Controls")
 
@@ -1088,24 +985,27 @@ with main_col:
 
     fund_scenarios_full = run_fund_scenarios(combined_full)
   
-    selected_industry_lower = selected_industry.lower()
-    
-    selected_age_lower = selected_age.lower()
+    if selected_industry == "All Industries":
 
+        combined_dyn = combined_full.copy()
+        industry_dyn = industry_full.copy()
+        impact_dyn = impact_full.copy()
 
-    # Employee-level (has age)
-    combined_dyn = combined_full[
-        combined_full["industry"] == selected_industry_lower
-    ].copy()
+    else:
 
-    # Industry-level aggregates (NO age dimension)
-    industry_dyn = industry_full[
-        industry_full["industry"] == selected_industry_lower
-    ].copy()
+        selected_industry_lower = selected_industry.lower()
 
-    impact_dyn = impact_full[
-        impact_full["industry"] == selected_industry_lower
-    ].copy()
+        combined_dyn = combined_full[
+            combined_full["industry"] == selected_industry_lower
+        ].copy()
+
+        industry_dyn = industry_full[
+            industry_full["industry"] == selected_industry_lower
+        ].copy()
+
+        impact_dyn = impact_full[
+            impact_full["industry"] == selected_industry_lower
+        ].copy()
 
     # Apply age filter ONLY to employee-level data
     if selected_age != "All":
@@ -1169,7 +1069,7 @@ with main_col:
         st.caption("Note: Job impact is calculated at Industry level (age breakdown not applied).")
 
     # ==========================================================
-    # TAB 1 — FUND ACCUMULATION (NO EXIT ADJUSTMENT)
+    # TAB 1 — FUND ACCUMULATION
     # ==========================================================
     with tabs[1]:
 
@@ -1177,25 +1077,26 @@ with main_col:
 
         df = fund_scenarios_full.copy()
 
-        # -----------------------------------------------------
+        # -----------------------------
         # Industry Filter
-        # -----------------------------------------------------
-        df = df[df["industry"] == selected_industry_lower]
+        # -----------------------------
+        if selected_industry != "All Industries":
+            selected_industry_lower = selected_industry.lower()
+            df = df[df["industry"] == selected_industry_lower]
 
-        # -----------------------------------------------------
+        # -----------------------------
         # Age Filter
-        # -----------------------------------------------------
+        # -----------------------------
         if selected_age != "All":
-            selected_age_lower = selected_age.lower()
-            df = df[df["age_bracket"] == selected_age_lower]
+            df = df[df["age_bracket"] == selected_age.lower()]
 
         if df.empty:
             st.warning("No data available for selected filters.")
             st.stop()
 
-        # -----------------------------------------------------
-        # Dynamic Return (Cohort-wise)
-        # -----------------------------------------------------
+        # -----------------------------
+        # Dynamic Return
+        # -----------------------------
         if fund_return == 0.04:
             df["fund_dynamic"] = df["fund_4"]
 
@@ -1212,17 +1113,14 @@ with main_col:
                 ["industry", "age_bracket", "cohort"],
                 sort=False
             ):
-
                 g = g.sort_values("year").copy()
 
                 fund = 0
                 balances = []
 
                 for _, row in g.iterrows():
-
                     fund = fund * (1 + fund_return)
                     fund += row["fund_contribution"]
-
                     balances.append(fund)
 
                 g["fund_dynamic"] = balances
@@ -1230,9 +1128,9 @@ with main_col:
 
             df = pd.concat(dynamic_blocks)
 
-        # -----------------------------------------------------
-        # Yearly Aggregation
-        # -----------------------------------------------------
+        # -----------------------------
+        # Aggregate
+        # -----------------------------
         grouped = df.groupby("year")[[
             "fund_4",
             "fund_6",
@@ -1240,9 +1138,9 @@ with main_col:
             "fund_dynamic"
         ]].sum().reset_index()
 
-        # -----------------------------------------------------
+        # -----------------------------
         # Plot
-        # -----------------------------------------------------
+        # -----------------------------
         fig = go.Figure()
 
         fig.add_trace(go.Scatter(
@@ -1281,12 +1179,6 @@ with main_col:
         )
 
         st.plotly_chart(fig, use_container_width=True)
-
-        st.caption("""
-                    **Note:** Fund Growth values are aggregated from cohort-level fund balances.
-                    Applying an age bracket filter isolates a subset of employees and does not
-                    represent the full Industry fund pool.
-                    """)
 
 # ==========================================================
 # TAB 2 — ECONOMIC (Sector Level, Age Filter Only)
@@ -1449,19 +1341,24 @@ with main_col:
 
         st.markdown("### EOSG & Payroll")
 
-        df = industry_dyn.copy()
+        # df = industry_dyn.copy()
         
 
-        df = df[df["industry"] == selected_industry_lower]
+        # df = df[df["industry"] == selected_industry_lower]
+        df = combined_dyn.copy()
 
         if df.empty:
             st.warning("No data available.")
             st.stop()
 
         grouped = df.groupby("year").agg({
-            "annual_total_salary": "sum",
+            "salary": "sum",
             "closing_fund_with_return": "sum"
         }).reset_index()
+
+        grouped = grouped.rename(columns={
+            "salary": "annual_total_salary"
+        })
 
         fig = go.Figure()        
 
@@ -1477,6 +1374,7 @@ with main_col:
             x=grouped["year"],
             y=grouped["annual_total_salary"] / 1e9,
             name="Payroll (Bn)",
+            opacity=0.6,
             yaxis="y2"
         ))
 
@@ -1494,19 +1392,17 @@ with main_col:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        st.caption("""              
-                    **Note:** Payroll and EOSG fund balances are calculated at the Industry level.
-                    Age bracket selection applies only to workforce-level views and does not
-                    change aggregate Industry totals shown here.
+        st.caption("""                
+                    **Note:** Payroll and EOSG fund balances are calculated at the  workforce-level. Both industry and Age_bracket changes view
                     """)
 
     with tabs[4]:
 
         st.markdown("### Individual Benefit Projection")
         st.caption("Employee assumed to start in 2025 at tenure 0.")
-        if selected_age == "All":
+        if selected_age == "All" or selected_industry == "All Industries":
+
             st.markdown("""
-                        
             <div style="
                 background-color:#FDECEC;
                 border-left:6px solid #C62828;
@@ -1516,10 +1412,11 @@ with main_col:
                 color:#7A0000;
                 margin-bottom:15px;
             ">
-            ⚠ Please select a specific age bracket for Individual Projection.<br>
-            One employee cannot belong to multiple age groups.
+            ⚠ Please select a specific Industry and Age Bracket for Individual Projection.<br>
+            One employee cannot belong to multiple industries or age groups.
             </div>
             """, unsafe_allow_html=True)
+
             st.stop()
         else:
 
@@ -1531,7 +1428,13 @@ with main_col:
             # ---------------------------
             # Industry Filter
             # ---------------------------
-            df = df[df["industry"] == selected_industry_lower]
+            #df = df[df["industry"] == selected_industry_lower]
+
+            if selected_industry != "All Industries":
+                selected_industry_lower = selected_industry.lower()
+                df = df[df["industry"] == selected_industry_lower]
+
+
             # ---------------------------
             # Age Filter
             # ---------------------------
@@ -1572,9 +1475,25 @@ with main_col:
 
             survivors = df["survived_employee"].sum()
 
-            # if survivors == 0:
-            #     st.warning("No surviving employees.")
-            #     st.stop()
+            if survivors == 0:
+                
+                
+                st.markdown("""
+                                <div style="
+                                    background-color:#FDECEC;
+                                    border-left:6px solid #C62828;
+                                    padding:16px;
+                                    border-radius:8px;
+                                    font-weight:600;
+                                    color:#7A0000;
+                                    margin-top:10px;
+                                    margin-bottom:15px;
+                                ">
+                                    ⚠ No surviving employees .<br>
+                                    All employees have exited at this age group.
+                                </div>
+                                """, unsafe_allow_html=True)
+                st.stop()
         
             per_0 = df["fund_0_exit_adj"].sum() / survivors
             # 4%, 6%, 8% per person
@@ -1652,5 +1571,3 @@ with main_col:
             """
         )
     
-
-
