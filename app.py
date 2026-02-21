@@ -887,18 +887,6 @@ with main_col:
 
     c3.metric("EOSG Accrual (Bn)",
             f"{iy['annual_total_gratuity_accrual'].sum()/1e9:.2f}")
-
-    c5, c6, c7 = st.columns(3)
-
-    c5.metric("Fund Coverage",
-            f"{iy['fund_coverage_ratio'].mean():.2f}x")
-
-    c6.metric("Contribution %",
-            f"{iy['contribution_ratio_%'].mean():.2f}%")
-
-    c7.metric("Employee Growth %",
-            f"{iy['employee_growth_%'].mean():.2f}%")
-
     
 
     st.markdown("## Workforce & Payroll Evolution")
@@ -1799,4 +1787,5 @@ with main_col:
             """
         )
     
+
 
