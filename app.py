@@ -578,6 +578,23 @@ with main_col:
     with st.sidebar:
 
         st.header("⚙ Industry Assumptions")
+        st.markdown("""
+        <div style="
+            background-color:#FAF6EB;
+            padding:12px;
+            border-radius:8px;
+            border-left:6px solid #F5B718;
+            font-weight:700;
+            color:#053048;
+            margin-bottom:15px;
+        ">
+        ⚙ Scenario Controls <br>
+        <span style="font-weight:500; font-size:13px;">
+        These inputs affect Scenario Analysis only (below).
+
+        </span>
+        </div>
+        """, unsafe_allow_html=True)
 
         # ------------------------------------------------------
         # Industry Selection
@@ -885,19 +902,43 @@ with main_col:
 
     st.markdown("## Workforce & Payroll Evolution")
 
-    trend_df = industry_dyn.copy()
+    # ------------------------------------------------------
+    # ALWAYS use full dataset (ignore industry & age filters)
+    # ------------------------------------------------------
+    trend_df = combined_full.copy()
 
-    # ==========================================
-    # YEARLY AGGREGATION
-    # ==========================================
+    # ------------------------------------------------------
+    # Compute salary totals properly
+    # ------------------------------------------------------
+    trend_df["salary_x_emp"] = (
+        trend_df["salary"] *
+        trend_df["survived_employee"]
+    )
 
+    trend_df["annual_salary_total"] = (
+        trend_df["salary_x_emp"] * 12
+    )
+
+    # ------------------------------------------------------
+    # YEARLY AGGREGATION (National Level)
+    # ------------------------------------------------------
     yearly = trend_df.groupby("year").agg({
-        "total_employees": "sum",
-        "annual_total_salary": "sum",
-        "annual_fund_contribution": "sum"
+        "survived_employee": "sum",
+        "annual_salary_total": "sum",
+        "fund_contribution": "sum"
     }).reset_index()
 
-    yearly["avg_salary"] = yearly["annual_total_salary"] / yearly["total_employees"]
+    yearly = yearly.rename(columns={
+        "survived_employee": "total_employees",
+        "annual_salary_total": "annual_total_salary",
+        "fund_contribution": "annual_fund_contribution"
+    })
+
+    # Derived metrics
+    yearly["avg_salary"] = (
+        yearly["annual_total_salary"] /
+        yearly["total_employees"]
+    )
 
     yearly["payroll_bn"] = yearly["annual_total_salary"] / 1e9
     yearly["fund_contribution_bn"] = yearly["annual_fund_contribution"] / 1e9
