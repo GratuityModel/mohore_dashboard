@@ -717,6 +717,43 @@ with main_col:
 
     combined_static, industry_static, impact_static = st.session_state.baseline_cache
 
+    
+    print(st.session_state.industry_assumptions.equals(merged_df))
+    combined_full, industry_full, impact_full = run_full_engine(
+        st.session_state.industry_assumptions,
+        fund_return,
+        leakage
+    )
+
+    @st.cache_data(show_spinner=False)
+    def run_fund_scenarios(df):
+        return generate_cohort_fund_scenarios(df)
+
+    fund_scenarios_full = run_fund_scenarios(combined_full)
+  
+    if selected_industry == "All Industries":
+
+        combined_dyn = combined_full.copy()
+        industry_dyn = industry_full.copy()
+        impact_dyn = impact_full.copy()
+
+    else:
+
+        selected_industry_lower = selected_industry.lower()
+
+        combined_dyn = combined_full[
+            combined_full["industry"] == selected_industry_lower
+        ].copy()
+
+        industry_dyn = industry_full[
+            industry_full["industry"] == selected_industry_lower
+        ].copy()
+
+        impact_dyn = impact_full[
+            impact_full["industry"] == selected_industry_lower
+        ].copy()
+    
+    
     # ==========================================================
     # GLOBAL BASELINE SUMMARY
     # ==========================================================
@@ -778,92 +815,274 @@ with main_col:
             f"{impact_static_year['Output_Impact'].sum()/1e9:.2f}")
 
 
-    st.markdown("## Full Economy Structure")
+    st.markdown("## Workforce & Economic Analytics")
+
+    # 1️⃣ Compute growth first
+    growth_df = industry_dyn.copy()
+    growth_df["employee_growth_%"] = (
+        growth_df.groupby("industry")["total_employees"]
+        .pct_change()
+        .fillna(0) * 100
+    )
 
     if baseline_year == "2026-2040":
 
-        eco_baseline = impact_static.copy()
-
-        # Aggregate across all years by Sector
-        eco_baseline = eco_baseline.groupby("SectorMap").agg({
-            "Output_Impact": "sum",
-            "GVA_Impact": "sum",
-            "Jobs_Impact": "sum"
-        }).reset_index()
+        iy = growth_df.copy()
+        eco = impact_dyn.copy()
 
     else:
 
-        eco_baseline = impact_static[
-            impact_static["year"] == baseline_year
-        ].copy()
+        iy = growth_df[growth_df["year"] == int(baseline_year)].copy()
+        eco = impact_dyn[impact_dyn["year"] == int(baseline_year)].copy()
 
-    # Convert units
-    eco_baseline["Output_Bn"] = eco_baseline["Output_Impact"] / 1_000_000_000
-    eco_baseline["GVA_Bn"] = eco_baseline["GVA_Impact"] / 1_000_000_000
-    eco_baseline["Jobs_K"] = eco_baseline["Jobs_Impact"] / 1_000
+    if iy.empty:
+        st.warning("No data available.")
+        st.stop()
 
-
-    # Aggregate by Sector
-    eco_grouped = eco_baseline.groupby("SectorMap").agg({
-        "Output_Bn": "sum",
-        "GVA_Bn": "sum",
-        "Jobs_K": "sum"
-    }).reset_index()
-
-    fig = go.Figure()
-
-    # ----------------------------------
-    # Output Bars
-    # ----------------------------------
-    fig.add_trace(go.Bar(
-        x=eco_grouped["SectorMap"],
-        y=eco_grouped["Output_Bn"],
-        name="Output Impact (Bn)",
-        marker_color="#053048"
-    ))
-
-    # ----------------------------------
-    # GVA Bars
-    # ----------------------------------
-    fig.add_trace(go.Bar(
-        x=eco_grouped["SectorMap"],
-        y=eco_grouped["GVA_Bn"],
-        name="GVA Impact (Bn)",
-        marker_color="#8BAAAD"
-    ))
-
-    # ----------------------------------
-    # Jobs Line (Secondary Axis)
-    # ----------------------------------
-    fig.add_trace(go.Scatter(
-        x=eco_grouped["SectorMap"],
-        y=eco_grouped["Jobs_K"],
-        name="Jobs Impact (Thousand)",
-        mode="lines+markers",
-        yaxis="y2",
-        marker=dict(color="#F5B718", size=8),
-        line=dict(width=3)
-    ))
-
-    fig.update_layout(
-        barmode="group",
-        template="plotly_white",
-        height=600,
-        xaxis=dict(title="Sector"),
-        yaxis=dict(title="Impact (Bn)"),
-        yaxis2=dict(
-            title="Jobs Impact (Thousand)",
-            overlaying="y",
-            side="right",
-            showgrid=False
-        ),
-        legend=dict(
-            orientation="h",
-            y=1.1
-        )
+    # 3️⃣ Derived metrics
+    iy["avg_monthly_salary"] = (
+        iy["annual_total_salary"] / (iy["total_employees"] * 12)
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    iy["contribution_ratio_%"] = (
+        iy["annual_fund_contribution"] /
+        iy["annual_total_salary"] * 100
+    )
+
+    iy["fund_coverage_ratio"] = (
+        iy["closing_fund_with_return"] /
+        iy["annual_total_gratuity_accrual"]
+    )
+
+    # ======================================================
+    # KPI GRID
+    # ======================================================
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Employees",
+            f"{iy['total_employees'].sum():,.0f}")
+
+    c2.metric("Avg Monthly Salary",
+            f"{iy['avg_monthly_salary'].mean():,.0f}")
+
+
+    c3.metric("EOSG Accrual (Bn)",
+            f"{iy['annual_total_gratuity_accrual'].sum()/1e9:.2f}")
+
+    c5, c6, c7 = st.columns(3)
+
+    c5.metric("Fund Coverage",
+            f"{iy['fund_coverage_ratio'].mean():.2f}x")
+
+    c6.metric("Contribution %",
+            f"{iy['contribution_ratio_%'].mean():.2f}%")
+
+    c7.metric("Employee Growth %",
+            f"{iy['employee_growth_%'].mean():.2f}%")
+
+    
+
+    st.markdown("## Workforce & Payroll Evolution")
+
+    trend_df = industry_dyn.copy()
+
+    # ==========================================
+    # YEARLY AGGREGATION
+    # ==========================================
+
+    yearly = trend_df.groupby("year").agg({
+        "total_employees": "sum",
+        "annual_total_salary": "sum",
+        "annual_fund_contribution": "sum"
+    }).reset_index()
+
+    yearly["avg_salary"] = yearly["annual_total_salary"] / yearly["total_employees"]
+
+    yearly["payroll_bn"] = yearly["annual_total_salary"] / 1e9
+    yearly["fund_contribution_bn"] = yearly["annual_fund_contribution"] / 1e9
+
+
+    # ==========================================
+    # CHART SELECTOR
+    # ==========================================
+
+    chart_option = st.selectbox(
+        "Select Workforce View",
+        [
+            "Total Workforce Size",
+            "Annual Payroll (Bn)",
+            "Annual Fund Contributions (Bn)",
+            "Average Salary per Employee",
+            "Payroll vs Workforce"
+        ]
+    )
+
+    def apply_clean_style(fig,paper_bgcolor="#FAF6EB", plot_bgcolor="#FAF6EB"):
+        fig.update_layout(
+            template=None,
+            paper_bgcolor=paper_bgcolor,
+            plot_bgcolor=plot_bgcolor,
+            font=dict(color="#053048"),
+            xaxis=dict(showgrid=False),
+            yaxis=dict(showgrid=False),
+            height=520
+        )
+        return fig
+
+    fig = None   # initialize safely
+
+    if chart_option == "Total Workforce Size":
+
+        # Aggregate by Industry × Year
+        industry_yearly = industry_dyn.groupby(
+            ["year", "industry"]
+        )["total_employees"].sum().reset_index()
+
+        fig = px.bar(
+            industry_yearly,
+            x="year",
+            y="total_employees",
+            color="industry",
+            title="Workforce Expansion by Industry",
+        )
+
+        fig.update_layout(
+            barmode="stack",
+            xaxis_title="Year",
+            yaxis_title="Number of Employees"
+        )
+
+        fig = apply_clean_style(fig, paper_bgcolor="#ffffff", plot_bgcolor="#ffffff")
+
+    elif chart_option == "Annual Payroll (Bn)":
+
+        yearly = yearly.sort_values("year")
+        yearly["payroll_change"] = yearly["payroll_bn"].diff()
+        yearly["payroll_change"].iloc[0] = yearly["payroll_bn"].iloc[0]
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Waterfall(
+            x=yearly["year"],
+            y=yearly["payroll_change"],
+            measure=["absolute"] + ["relative"]*(len(yearly)-1),
+            name="Yearly Change",
+            increasing=dict(marker=dict(color="#F5B718")),
+            decreasing=dict(marker=dict(color="#EFD59B")),
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=yearly["year"],
+            y=yearly["payroll_bn"],
+            name="Total Payroll (Bn)",
+            mode="lines+markers",
+            line=dict(color="#000000", width=4, dash="dot"),
+            yaxis="y2"
+        ))
+
+        fig.update_layout(
+            title="Payroll Evolution & Yearly Change",
+            xaxis_title="Year",
+            yaxis=dict(title="Annual Change (Billion AED)"),
+            yaxis2=dict(
+                title="Total Payroll (Billion AED)",
+                overlaying="y",
+                side="right"
+            ),
+            template="plotly_white",
+            height=550,
+            legend=dict(orientation="h", y=1.1)
+        )
+        fig = apply_clean_style(fig)
+
+    elif chart_option == "Annual Fund Contributions (Bn)":
+
+        
+        fig = px.bar(
+            yearly,
+            x="year",
+            y="fund_contribution_bn",
+            text="fund_contribution_bn",
+            title="Total Annual EOSG Contributions"
+        )
+
+        fig.update_traces(
+            marker_color="#F5B718",
+            texttemplate="%{text:.2f}",
+            textposition="outside"
+        )
+
+        fig.update_layout(
+            xaxis_title="Year",
+            yaxis_title="Fund Contribution (Billion AED)"
+        )
+
+        fig = apply_clean_style(fig, paper_bgcolor="#93838E", plot_bgcolor="#93838E")
+
+    elif chart_option == "Average Salary per Employee":
+
+        fig = px.line(
+            yearly,
+            x="year",
+            y="avg_salary",
+            markers=True,
+            text="avg_salary",
+            title="Average Salary per Employee"
+        )
+
+        fig.update_traces(
+            line=dict(color="#93838E", width=4),
+            marker=dict(size=8, color="#93838E"),
+            texttemplate="%{text:,.0f}",
+            textposition="top center"
+        )
+
+        fig.update_layout(
+            xaxis_title="Year",
+            yaxis_title="Average Salary (AED)"
+        )
+
+
+        fig = apply_clean_style(fig,    paper_bgcolor="#F5B718", plot_bgcolor="#F5B718")
+
+    elif chart_option == "Payroll vs Workforce":
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            x=yearly["year"],
+            y=yearly["payroll_bn"],
+            name="Payroll (Bn AED)",
+            opacity=0.6
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=yearly["year"],
+            y=yearly["total_employees"],
+            name="Employees",
+            mode="lines+markers",
+            yaxis="y2",
+            line=dict(width=4)
+        ))
+
+        fig.update_layout(
+            title="Payroll vs Workforce Size",
+            xaxis_title="Year",
+            yaxis=dict(title="Payroll (Billion AED)"),
+            yaxis2=dict(
+                title="Number of Employees",
+                overlaying="y",
+                side="right"
+            ),
+            template="plotly_white",
+            height=520
+        )
+        fig = apply_clean_style(fig, paper_bgcolor="#BDD4E7", plot_bgcolor="#BDD4E7")
+
+    # 👇 Only render if figure exists
+    if fig is not None:
+        st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("### Economic Impact Progression")
 
@@ -972,40 +1191,7 @@ with main_col:
     st.plotly_chart(fig_evo, use_container_width=True)
 
 
-    print(st.session_state.industry_assumptions.equals(merged_df))
-    combined_full, industry_full, impact_full = run_full_engine(
-        st.session_state.industry_assumptions,
-        fund_return,
-        leakage
-    )
-
-    @st.cache_data(show_spinner=False)
-    def run_fund_scenarios(df):
-        return generate_cohort_fund_scenarios(df)
-
-    fund_scenarios_full = run_fund_scenarios(combined_full)
-  
-    if selected_industry == "All Industries":
-
-        combined_dyn = combined_full.copy()
-        industry_dyn = industry_full.copy()
-        impact_dyn = impact_full.copy()
-
-    else:
-
-        selected_industry_lower = selected_industry.lower()
-
-        combined_dyn = combined_full[
-            combined_full["industry"] == selected_industry_lower
-        ].copy()
-
-        industry_dyn = industry_full[
-            industry_full["industry"] == selected_industry_lower
-        ].copy()
-
-        impact_dyn = impact_full[
-            impact_full["industry"] == selected_industry_lower
-        ].copy()
+    
 
     # Apply age filter ONLY to employee-level data
     if selected_age != "All":
