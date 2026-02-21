@@ -1,25 +1,20 @@
 import pandas as pd
 import numpy as np
-from numba import njit, prange
+
 
 def generate_merged_industry_data(
-    industry_desc_path,
-    industry_rates_path,
+    industry_desc,
+    industry_rates,
     save_output=False,
     output_path=None
 ):
-
-    # -----------------------------
-    # 1. Load Files
-    # -----------------------------
-    industry_desc = pd.read_excel(industry_desc_path)
-    industry_rates = pd.read_excel(industry_rates_path)
-
+    # Assumes industry_desc and industry_rates are already DataFrames
+    industry_desc = industry_desc.copy()
+    industry_rates = industry_rates.copy()
     industry_desc.columns = industry_desc.columns.str.strip()
     industry_rates.columns = industry_rates.columns.str.strip()
-
     if "Industry" not in industry_desc.columns:
-        raise ValueError("Industry column missing in industry description file.")
+        raise ValueError("Industry column missing in industry description DataFrame.")
 
     # -----------------------------
     # 2. Merge
@@ -138,7 +133,7 @@ def generate_merged_industry_data(
 
 
 def generate_employee_salary_forecast(
-    employee_salary_path,
+    df_emp,
     merged_industry_df,
     start_year=2025,
     end_year=2040,
@@ -146,21 +141,15 @@ def generate_employee_salary_forecast(
     employee_output_path=None,
     salary_output_path=None
 ):
- 
-    # ==========================================================
-    # 1. LOAD DATA
-    # ==========================================================
-    df_emp = pd.read_excel(employee_salary_path)
+    # Assumes df_emp and merged_industry_df are already DataFrames
+    df_emp = df_emp.copy()
     df_rates = merged_industry_df.copy()
-
     df_emp.columns = df_emp.columns.str.strip()
     df_rates.columns = df_rates.columns.str.strip()
-
     # Standardize names
     df_emp = df_emp.rename(columns={
         "Average Basic Salary": "Average_Base_Salary"
     })
-
     df_rates = df_rates.rename(columns={
         "Age_Bracket": "Age_Brackets"
     })
@@ -295,34 +284,24 @@ def generate_employee_salary_forecast(
 
 
 def generate_survival_template_cohort_style(
-    meta_info_path,
+    meta_info_df,
     start_year=2025,
     end_year=2040
 ):
     """
     Creates survival template in cohort format + extra fixed 2025 cohort block.
-
     Structure 1:
         Normal yearly cohorts (2025_0, 2026_0, ...)
-
     Structure 2:
         Fixed 2025 starting cohort
         Tenure starts from 1 and increases every year
     """
-
-    import pandas as pd
-
-    # ----------------------------------------------------------
-    # 1. LOAD META FILE
-    # ----------------------------------------------------------
-    df_raw = pd.read_csv(meta_info_path)
+    # Assumes meta_info_df is already a DataFrame
+    df_raw = meta_info_df.copy()
     df_raw.columns = df_raw.columns.str.strip()
-
     industries = df_raw["Industry"].dropna().unique()
     age_bracket = df_raw["Age_Bracket"].dropna().unique()
-
     projection_years = range(start_year, end_year + 1)
-
     records = []
 
     # ----------------------------------------------------------
@@ -392,8 +371,7 @@ def attach_salary_to_survival(
     survival_template_df,
     salary_forecast_df
 ):
-    import pandas as pd
-
+    # Assumes DataFrames are already provided
     surv = survival_template_df.copy()
     sal = salary_forecast_df.copy()
 
@@ -435,8 +413,7 @@ def attach_employees_to_survival(
     survival_template_df,
     employee_forecast_df
 ):
-    import pandas as pd
-
+    # Assumes DataFrames are already provided
     surv = survival_template_df.copy()
     emp = employee_forecast_df.copy()
 
@@ -488,8 +465,7 @@ def attach_exit_and_replacement(
     survival_with_employees_df,
     merged_industry_df
 ):
-    import pandas as pd
-
+    # Assumes DataFrames are already provided
     surv = survival_with_employees_df.copy()
     rates = merged_industry_df.copy()
 
@@ -611,15 +587,25 @@ def run_full_survival_eosg_model(
 
                     if i == 0:
 
-                        if row["year"] == start_year and row["tenure"] > 0:
-                            g.iloc[i, g.columns.get_loc(
-                                "survived_employee")] = row["employees"]
+                        base = row["employees"]
+                        exit_rate = row["exit_rate"]
+                        repl_rate = row["replacement_rate"]
+
+                        # Apply exit immediately (even in 2025 tenure > 0)
+                        survived = round(base * (1 - exit_rate), 0)
+                        exit_emp = round(base * exit_rate, 0)
+
+                        if age in ["<55", "55-59","60-64","65-69","70+"]:
+                            replacement = exit_emp
                         else:
-                            key = (row["year"], row["tenure"])
-                            inflow = exit_pool.get(key, 0)
-                            base = row["employees"]
-                            g.iloc[i, g.columns.get_loc(
-                                "survived_employee")] = base + inflow
+                            replacement = round(exit_emp * repl_rate, 0)
+
+                        g.iloc[i, g.columns.get_loc("survived_employee")] = survived
+                        g.iloc[i, g.columns.get_loc("exit_employee")] = exit_emp
+
+                        # Push replacements to next year tenure 0
+                        key = (row["exit_year"], row["exit_tenure"])
+                        exit_pool[key] = exit_pool.get(key, 0) + replacement
 
                         continue
 
