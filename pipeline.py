@@ -591,25 +591,15 @@ def run_full_survival_eosg_model(
 
                     if i == 0:
 
-                        base = row["employees"]
-                        exit_rate = row["exit_rate"]
-                        repl_rate = row["replacement_rate"]
-
-                        # Apply exit immediately (even in 2025 tenure > 0)
-                        survived = round(base * (1 - exit_rate), 0)
-                        exit_emp = round(base * exit_rate, 0)
-
-                        if age in ["<55", "55-59","60-64","65-69","70+"]:
-                            replacement = exit_emp
+                        if row["year"] == start_year and row["tenure"] > 0:
+                            g.iloc[i, g.columns.get_loc(
+                                "survived_employee")] = row["employees"]
                         else:
-                            replacement = round(exit_emp * repl_rate, 0)
-
-                        g.iloc[i, g.columns.get_loc("survived_employee")] = survived
-                        g.iloc[i, g.columns.get_loc("exit_employee")] = exit_emp
-
-                        # Push replacements to next year tenure 0
-                        key = (row["exit_year"], row["exit_tenure"])
-                        exit_pool[key] = exit_pool.get(key, 0) + replacement
+                            key = (row["year"], row["tenure"])
+                            inflow = exit_pool.get(key, 0)
+                            base = row["employees"]
+                            g.iloc[i, g.columns.get_loc(
+                                "survived_employee")] = base + inflow
 
                         continue
 
@@ -1078,6 +1068,5 @@ def generate_cohort_fund_scenarios(combined_df):
     final_df = pd.concat(result_blocks).reset_index(drop=True)
 
     return final_df
-
 
 
