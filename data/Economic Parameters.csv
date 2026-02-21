@@ -1,0 +1,23 @@
+Industry,SectorMap,Output_Multiplier_Type_I,GVA_Multiplier,Employment_Multiplier (jobs per AED 1M output),Import_Leakage,GVA_to_Output_Ratio,Domestic_Content
+A-Agriculture and fishing,Other Services,1.65,0.7,21.8,0.26,0.51,0.74
+B-Mining and quarrying,Oil & Gas (Separate),1.28,0.55,2.8,0.15,0.68,0.85
+C-Manufacturing,Manufacturing,1.85,0.78,12.5,0.45,0.35,0.55
+D-Electricity and gas supply,Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+"E-Water supply, sewerage and waste",Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+F-Construction,Construction & Real Estate,1.88,0.79,27.2,0.32,0.5,0.68
+G-Wholesale and retail,Trade & Transport,1.98,0.83,22.5,0.26,0.54,0.74
+H-Transportation and storage,Trade & Transport,1.98,0.83,22.5,0.26,0.54,0.74
+I-Accommodation and food services,Trade & Transport,1.98,0.83,22.5,0.26,0.54,0.74
+J-Information and communication,Financial Services & ICT,1.52,0.64,8.8,0.24,0.64,0.76
+K-Financial activities,Financial Services & ICT,1.52,0.64,8.8,0.24,0.64,0.76
+L-Real estate activities,Construction & Real Estate,1.88,0.79,27.2,0.32,0.5,0.68
+"M-Professional, scientific and technical activities",Financial Services & ICT,1.52,0.64,8.8,0.24,0.64,0.76
+N-Administrative services activities,Other Services,1.65,0.7,21.8,0.26,0.51,0.74
+O-Public administration and defence,Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+P-Education,Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+Q-Health and social work,Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+"R-Arts, entertainment and recreation",Other Services,1.65,0.7,21.8,0.26,0.51,0.74
+S-Other service activities,Other Services,1.65,0.7,21.8,0.26,0.51,0.74
+T-Activities of households,Other Services,1.65,0.7,21.8,0.26,0.51,0.74
+U-Activities of organizations and bodies,Public/Quasi-Public,1.32,0.56,16.5,0.14,0.7,0.86
+Z-Other,Other Services,1.65,0.7,21.8,0.26,0.51,0.74

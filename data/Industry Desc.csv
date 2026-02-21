@@ -1,0 +1,111 @@
+Industry,Age_Bracket,Retirement Rate,Death Rate
+A-Agriculture and fishing,<55,0%,0%
+A-Agriculture and fishing,55-59,5%,0%
+A-Agriculture and fishing,60-64,25%,0%
+A-Agriculture and fishing,65-69,50%,0%
+A-Agriculture and fishing,70+,90%,1%
+B-Mining and quarrying,<55,0%,0%
+B-Mining and quarrying,55-59,5%,0%
+B-Mining and quarrying,60-64,25%,0%
+B-Mining and quarrying,65-69,50%,0%
+B-Mining and quarrying,70+,90%,1%
+C-Manufacturing,<55,0%,0%
+C-Manufacturing,55-59,5%,0%
+C-Manufacturing,60-64,25%,0%
+C-Manufacturing,65-69,50%,0%
+C-Manufacturing,70+,90%,1%
+D-Electricity and gas supply,<55,0%,0%
+D-Electricity and gas supply,55-59,5%,0%
+D-Electricity and gas supply,60-64,25%,0%
+D-Electricity and gas supply,65-69,50%,0%
+D-Electricity and gas supply,70+,90%,1%
+"E-Water supply, sewerage and waste",<55,0%,0%
+"E-Water supply, sewerage and waste",55-59,5%,0%
+"E-Water supply, sewerage and waste",60-64,25%,0%
+"E-Water supply, sewerage and waste",65-69,50%,0%
+"E-Water supply, sewerage and waste",70+,90%,1%
+F-Construction,<55,0%,0%
+F-Construction,55-59,5%,0%
+F-Construction,60-64,25%,0%
+F-Construction,65-69,50%,0%
+F-Construction,70+,90%,1%
+G-Wholesale and retail,<55,0%,0%
+G-Wholesale and retail,55-59,5%,0%
+G-Wholesale and retail,60-64,25%,0%
+G-Wholesale and retail,65-69,50%,0%
+G-Wholesale and retail,70+,90%,1%
+H-Transportation and storage,<55,0%,0%
+H-Transportation and storage,55-59,5%,0%
+H-Transportation and storage,60-64,25%,0%
+H-Transportation and storage,65-69,50%,0%
+H-Transportation and storage,70+,90%,1%
+I-Accommodation and food services,<55,0%,0%
+I-Accommodation and food services,55-59,5%,0%
+I-Accommodation and food services,60-64,25%,0%
+I-Accommodation and food services,65-69,50%,0%
+I-Accommodation and food services,70+,90%,1%
+J-Information and communication,<55,0%,0%
+J-Information and communication,55-59,5%,0%
+J-Information and communication,60-64,25%,0%
+J-Information and communication,65-69,50%,0%
+J-Information and communication,70+,90%,1%
+K-Financial activities,<55,0%,0%
+K-Financial activities,55-59,5%,0%
+K-Financial activities,60-64,25%,0%
+K-Financial activities,65-69,50%,0%
+K-Financial activities,70+,90%,1%
+L-Real estate activities,<55,0%,0%
+L-Real estate activities,55-59,5%,0%
+L-Real estate activities,60-64,25%,0%
+L-Real estate activities,65-69,50%,0%
+L-Real estate activities,70+,90%,1%
+"M-Professional, scientific and technical activities",<55,0%,0%
+"M-Professional, scientific and technical activities",55-59,5%,0%
+"M-Professional, scientific and technical activities",60-64,25%,0%
+"M-Professional, scientific and technical activities",65-69,50%,0%
+"M-Professional, scientific and technical activities",70+,90%,1%
+N-Administrative services activities,<55,0%,0%
+N-Administrative services activities,55-59,5%,0%
+N-Administrative services activities,60-64,25%,0%
+N-Administrative services activities,65-69,50%,0%
+N-Administrative services activities,70+,90%,1%
+O-Public administration and defence,<55,0%,0%
+O-Public administration and defence,55-59,5%,0%
+O-Public administration and defence,60-64,25%,0%
+O-Public administration and defence,65-69,50%,0%
+O-Public administration and defence,70+,90%,1%
+P-Education,<55,0%,0%
+P-Education,55-59,5%,0%
+P-Education,60-64,25%,0%
+P-Education,65-69,50%,0%
+P-Education,70+,90%,1%
+Q-Health and social work,<55,0%,0%
+Q-Health and social work,55-59,5%,0%
+Q-Health and social work,60-64,25%,0%
+Q-Health and social work,65-69,50%,0%
+Q-Health and social work,70+,90%,1%
+"R-Arts, entertainment and recreation",<55,0%,0%
+"R-Arts, entertainment and recreation",55-59,5%,0%
+"R-Arts, entertainment and recreation",60-64,25%,0%
+"R-Arts, entertainment and recreation",65-69,50%,0%
+"R-Arts, entertainment and recreation",70+,90%,1%
+S-Other service activities,<55,0%,0%
+S-Other service activities,55-59,5%,0%
+S-Other service activities,60-64,25%,0%
+S-Other service activities,65-69,50%,0%
+S-Other service activities,70+,90%,1%
+T-Activities of households,<55,0%,0%
+T-Activities of households,55-59,5%,0%
+T-Activities of households,60-64,25%,0%
+T-Activities of households,65-69,50%,0%
+T-Activities of households,70+,90%,1%
+U-Activities of organizations and bodies,<55,0%,0%
+U-Activities of organizations and bodies,55-59,5%,0%
+U-Activities of organizations and bodies,60-64,25%,0%
+U-Activities of organizations and bodies,65-69,50%,0%
+U-Activities of organizations and bodies,70+,90%,1%
+Z-Other,<55,0%,0%
+Z-Other,55-59,5%,0%
+Z-Other,60-64,25%,0%
+Z-Other,65-69,50%,0%
+Z-Other,70+,90%,1%
