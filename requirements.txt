@@ -5,4 +5,6 @@ openpyxl
 plotly-express
 numpy
 numba
+matplotlib
+
 
