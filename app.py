@@ -202,7 +202,7 @@ div[data-testid="stDownloadButton"] button:hover {
 
 
 BASE_YEAR = 2025
-BASE_RETURN = 0.04
+BASE_RETURN = 0.08
 BASE_LEAKAGE = 0.28
 
 # ==========================================================
@@ -497,7 +497,7 @@ with st.sidebar:
     st.subheader("Fund return and leakage")
     fund_return = st.slider(
         "Fund Return %",
-        0.0, 12.0, 4.0
+        0.0, 12.0, 8.0
     ) / 100
 
     leakage = st.slider(
@@ -1434,3 +1434,4 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
+
