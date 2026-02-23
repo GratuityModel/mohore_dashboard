@@ -1,10 +1,19 @@
-from altair import value
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pipeline import *
 from PIL import Image
+
+def download_csv_button(df, filename, label="Download CSV"):
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label=label,
+        data=csv,
+        file_name=filename,
+        mime="text/csv",
+        use_container_width=True
+    )
 
 # ==========================================================
 # CONFIG
@@ -174,6 +183,19 @@ label {
     color: #000000 !important;
 }
 
+div[data-testid="stDownloadButton"] button {
+    background-color: #ffffff !important;
+    color: #053048 !important;
+    border: 1px solid #053048 !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+
+div[data-testid="stDownloadButton"] button:hover {
+    background-color: #F5B718 !important;
+    color: #000000 !important;
+    border: 1px solid #F5B718 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -297,7 +319,10 @@ if "industry_assumptions" not in st.session_state:
 @st.cache_data(show_spinner=False)
 def run_full_engine(industry_assumptions,
                     fund_return,
-                    leakage_rate):
+                    leakage_rate,
+                    output_delta,
+                    gva_delta,
+                    employment_delta):
 
     # ==========================================================
     # 1️⃣ Employee + Salary Forecast
@@ -367,9 +392,23 @@ def run_full_engine(industry_assumptions,
     # 8️⃣ Apply Economic Layer
     # ==========================================================
 
+    economic_adj = economic_master.copy()
+
+    economic_adj["Output_Multiplier_Type_I"] = (
+        economic_adj["Output_Multiplier_Type_I"] + output_delta
+    ).clip(lower=0)
+
+    economic_adj["GVA_to_Output_Ratio"] = (
+        economic_adj["GVA_to_Output_Ratio"] + gva_delta
+    ).clip(lower=0)
+
+    economic_adj["Employment_Multiplier (jobs per AED 1M output)"] = (
+        economic_adj["Employment_Multiplier (jobs per AED 1M output)"] + employment_delta
+    ).clip(lower=0)
+    
     impact_df = apply_economic_impact_combined(
         industry_year,
-        economic_master,
+        economic_adj,
         leakage_rate
     )
 
@@ -403,24 +442,7 @@ def run_full_engine(industry_assumptions,
 with st.sidebar:
 
     st.header("⚙ Industry Assumptions")
-    st.markdown("""
-    <div style="
-        background-color:#FAF6EB;
-        padding:12px;
-        border-radius:8px;
-        border-left:6px solid #F5B718;
-        font-weight:700;
-        color:#053048;
-        margin-bottom:15px;
-    ">
-    ⚙ Scenario Controls <br>
-    <span style="font-weight:500; font-size:13px;">
-    These inputs affect Scenario Analysis only (below).
-
-    </span>
-    </div>
-    """, unsafe_allow_html=True)
-
+    
     # ------------------------------------------------------
     # Industry Selection
     # ------------------------------------------------------
@@ -440,74 +462,6 @@ with st.sidebar:
         industry_df = st.session_state.industry_assumptions[
             st.session_state.industry_assumptions["Industry"] == selected_industry
         ]
-    # ------------------------------------------------------
-    # Editable Industry Parameters (No Age Level)
-    # ------------------------------------------------------
-
-    if selected_industry != "All Industries":
-
-        # Take first row for that industry (since rates same across ages)
-        row_idx = industry_df.index[0]
-        row = st.session_state.industry_assumptions.loc[row_idx]
-
-        st.markdown("### Editable Parameters")
-
-        exp_input = st.number_input(
-            "Expansion Hiring %",
-            min_value=0.0,
-            max_value=20.0,
-            value=float(row["Expansion Hiring %"]) * 100,
-            step=0.1,
-            format="%.2f"
-        )
-
-        sal_input = st.number_input(
-            "Salary Growth %",
-            min_value=0.0,
-            max_value=20.0,
-            value=float(row["Salary Growth %"]) * 100,
-            step=0.1,
-            format="%.2f"
-        )
-
-        if st.button("Update Assumptions"):
-
-            exp_val = exp_input / 100
-            sal_val = sal_input / 100
-
-            mask = (
-                st.session_state.industry_assumptions["Industry"]
-                == selected_industry
-            )
-
-            st.session_state.industry_assumptions.loc[
-                mask, "Expansion Hiring %"
-            ] = exp_val
-
-            st.session_state.industry_assumptions.loc[
-                mask, "Salary Growth %"
-            ] = sal_val
-
-            # Recalculate derived fields
-            df = st.session_state.industry_assumptions
-
-            df["Total Hiring %"] = (
-                df["Expansion Hiring %"]
-                + df["Replacement Hiring %"]
-            )
-
-            df["Total Exit (q)"] = (
-                df["Attrition %"]
-                + df["Retirement Rate"]
-                + df["Death Rate"]
-            )
-
-            df["Net Churn %"] = (
-                df["Total Hiring %"]
-                - df["Total Exit (q)"]
-            )
-
-            st.success("Industry assumptions updated ✔")
 
     # ======================================================
     # GLOBAL CONTROLS
@@ -516,6 +470,31 @@ with st.sidebar:
     st.markdown("---")
     st.header("Global Controls")
 
+    
+    st.subheader("Global Workforce & Salary Override")
+    st.markdown(
+        """
+        <div style="font-size:12px; color:#444444; margin-top:-5px; margin-bottom:10px;">
+        Applies a uniform adjustment to all industries. 
+        Example: if workforce growth is 3% and override = +1%, 
+        the effective growth becomes 4% across all sectors.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    workforce_override = st.slider(
+        "Workforce Growth Override (%)",
+        -10.0, 10.0, 0.0, step=0.1
+    ) / 100
+
+    salary_override = st.slider(
+        "Salary Growth Override (%)",
+        -10.0, 10.0, 0.0, step=0.1
+    ) / 100
+
+    
+    st.subheader("Fund return and leakage")
     fund_return = st.slider(
         "Fund Return %",
         0.0, 12.0, 4.0
@@ -525,6 +504,39 @@ with st.sidebar:
         "Leakage %",
         0.0, 50.0, 28.0
     ) / 100
+
+    
+    st.subheader("Economic Multiplier Absolute Adjustment")
+    st.markdown(
+        """
+        <div style="font-size:12px; color:#444444; margin-top:-5px; margin-bottom:10px;">
+        Adds an absolute delta to macro multipliers. 
+        Example: if Output Multiplier = 1.8 and Δ = +0.2, 
+        the new multiplier becomes 2.0. 
+        Positive values strengthen economic transmission; 
+        negative values reduce it.
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    output_delta = st.number_input(
+        "Output Multiplier Δ",
+        value=0.0,
+        step=0.1
+    )
+
+    gva_delta = st.number_input(
+        "GVA Ratio Δ",
+        value=0.0,
+        step=0.05
+    )
+
+    employment_delta = st.number_input(
+        "Employment Multiplier Δ",
+        value=0.0,
+        step=0.5
+    )
 
 
 
@@ -536,17 +548,41 @@ if "baseline_cache" not in st.session_state:
     st.session_state.baseline_cache = run_full_engine(
         merged_df,
         BASE_RETURN,
-        BASE_LEAKAGE
+        BASE_LEAKAGE,
+        0.0,
+        0.0,
+        0.0
     )
 
 combined_static, industry_static, impact_static = st.session_state.baseline_cache
 
 
 
+assumptions_adj = st.session_state.industry_assumptions.copy()
+
+# Apply workforce override
+assumptions_adj["Expansion Hiring %"] = (
+    assumptions_adj["Expansion Hiring %"] + workforce_override
+).clip(lower=0)
+
+# Apply salary override
+assumptions_adj["Salary Growth %"] = (
+    assumptions_adj["Salary Growth %"] + salary_override
+).clip(lower=0)
+
+# Recalculate derived
+assumptions_adj["Total Hiring %"] = (
+    assumptions_adj["Expansion Hiring %"] +
+    assumptions_adj["Replacement Hiring %"]
+)
+
 combined_full, industry_full, impact_full = run_full_engine(
-    st.session_state.industry_assumptions,
+    assumptions_adj,
     fund_return,
-    leakage
+    leakage,
+    output_delta,
+    gva_delta,
+    employment_delta
 )
 
 @st.cache_data(show_spinner=False)
@@ -609,6 +645,11 @@ with tabs[0]:
     )
 
     df_year = df[df["year"] == selected_year]
+    download_csv_button(
+        df_year,
+        f"workforce_year_{selected_year}.csv",
+        "Download Selected Year Data"
+    )
 
     # -----------------------------
     # KPI METRICS
@@ -681,6 +722,11 @@ with tabs[0]:
     # ======================================================
 
     with chart_tabs[0]:
+        
+        download_csv_button(
+            df_grouped[["year", "workforce"]],
+            "workforce_trend.csv"
+        )
 
         fig1 = px.bar(
             df_grouped,
@@ -700,6 +746,10 @@ with tabs[0]:
         st.plotly_chart(fig1, use_container_width=True)
 
     with chart_tabs[1]:
+        download_csv_button(
+            df_grouped[["year", "payroll_bn", "contribution_bn"]],
+            "payroll_contributions.csv"
+        )
 
         fig2 = go.Figure()
 
@@ -741,11 +791,17 @@ with tabs[0]:
 
         st.plotly_chart(fig2, use_container_width=True)
 
+
+
     # ======================================================
     # 3️⃣ Salary vs Workforce (Bar + Line Dual Axis)
     # ======================================================
 
     with chart_tabs[2]:
+        download_csv_button(
+            df_grouped[["year", "workforce", "avg_salary"]],
+            "salary_vs_workforce.csv"
+        )
 
         fig3 = go.Figure()
 
@@ -786,6 +842,10 @@ with tabs[0]:
     # ======================================================
 
     with chart_tabs[3]:
+        download_csv_button(
+            df_grouped[["year", "payroll_bn", "accrual_bn"]],
+            "payroll_vs_accrual.csv"
+        )
 
         fig4 = go.Figure()
 
@@ -844,6 +904,10 @@ with tabs[1]:
     fund_year["return_bn"] = fund_year["return_amt"] / 1e9
     fund_year["payout_bn"] = fund_year["payout"] / 1e9
 
+    download_csv_button(
+        fund_year,
+        "fund_overview.csv"
+    )
     # -----------------------------------------
     # KPIs (Latest Year)
     # -----------------------------------------
@@ -873,7 +937,8 @@ with tabs[1]:
 
     fund_tabs = st.tabs([
         "Fund Growth",
-        "Return vs Exit Payout"
+        "Return vs Exit Payout",
+        "Fund Growth vs Liability Growth"
     ])
 
     # ======================================================
@@ -881,6 +946,10 @@ with tabs[1]:
     # ======================================================
 
     with fund_tabs[0]:
+        download_csv_button(
+            fund_year[["year", "closing_bn", "contribution_bn"]],
+            "fund_growth.csv"
+        )
 
         fig_fund = go.Figure()
 
@@ -921,6 +990,10 @@ with tabs[1]:
     # ======================================================
 
     with fund_tabs[1]:
+        download_csv_button(
+            fund_year[["year", "return_bn", "payout_bn"]],
+            "return_vs_exit.csv"
+        )
 
         fig_flow = go.Figure()
 
@@ -948,6 +1021,70 @@ with tabs[1]:
         )
 
         st.plotly_chart(fig_flow, use_container_width=True)
+    with fund_tabs[2]:
+
+        
+        # -------------------------------------------------------
+        # Change in Closing Fund vs Liability (From 2026)
+        # -------------------------------------------------------
+
+        change_df = (
+            industry_dyn.groupby("year", as_index=False)
+            .agg(
+                closing_fund=("closing_fund_with_return", "sum"),
+                liability=("exit_adjusted_liability", "sum")
+            )
+        )
+
+        # Remove 2025
+        change_df = change_df[change_df["year"] > 2025].copy()
+
+        # Convert to billions
+        change_df["closing_bn"] = change_df["closing_fund"] / 1e9
+        change_df["liability_bn"] = change_df["liability"] / 1e9
+
+        # YoY Change
+        change_df["fund_change_bn"] = change_df["closing_bn"].diff()
+        change_df["liability_change_bn"] = change_df["liability_bn"].diff()
+
+        # Remove first row (no previous year for diff)
+        change_df = change_df.dropna()
+
+        # -----------------------------
+        # CHART
+        # -----------------------------
+        download_csv_button(
+            change_df,
+            "fund_vs_liability_change.csv"
+        )
+        
+        fig_change = go.Figure()
+
+        fig_change.add_trace(go.Bar(
+            x=change_df["year"],
+            y=change_df["fund_change_bn"],
+            name="Change in Closing Fund (Bn)",
+            marker_color="#053048"
+        ))
+
+        fig_change.add_trace(go.Bar(
+            x=change_df["year"],
+            y=change_df["liability_change_bn"],
+            name="Change in Liability (Bn)",
+            marker_color="#F5B718"
+        ))
+
+        fig_change.update_layout(
+            barmode="group",
+            title="Change in Closing Fund vs Change in Liability (From 2026)",
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            yaxis_title="Change (Bn)"
+        )
+
+        st.plotly_chart(fig_change, use_container_width=True)
+
+
 # ==========================================================
 # TAB 3 — ECONOMIC IMPACT
 # ==========================================================
@@ -996,6 +1133,11 @@ with tabs[2]:
     # -----------------------------------------
     # KPI DISPLAY
     # -----------------------------------------
+    download_csv_button(
+        eco_display,
+        "economic_impact_filtered.csv"
+    )
+
 
     k1, k2, k3 = st.columns(3)
 
@@ -1025,6 +1167,7 @@ with tabs[2]:
 
     with eco_tabs[0]:
 
+
         eco_year = (
             df_eco.groupby("year", as_index=False)
             .agg(
@@ -1037,6 +1180,11 @@ with tabs[2]:
         eco_year["GDP_bn"] = eco_year["GDP"] / 1e9
         eco_year["Output_bn"] = eco_year["Output"] / 1e9
 
+        download_csv_button(
+            eco_year,
+            "economic_progression.csv"
+        )
+        
         fig_progress = go.Figure()
 
         fig_progress.add_trace(go.Bar(
@@ -1111,6 +1259,11 @@ with tabs[2]:
 
         sector_df["GDP_bn"] = sector_df["GDP"] / 1e9
 
+        download_csv_button(
+            sector_df,
+            "sector_distribution.csv"
+        )
+
         fig_sector = px.bar(
             sector_df,
             x="SectorMap",
@@ -1137,15 +1290,15 @@ with tabs[2]:
 
         st.markdown("## Employee Benefit Calculator")
 
-        # ---------------------------------
+        # -----------------------------
         # INPUT SECTION
-        # ---------------------------------
+        # -----------------------------
 
-        colA, colB, colC = st.columns(3)
+        colA, colB = st.columns(2)
 
         with colA:
             prev_salary = st.number_input(
-                "Basic Salary (Previous Year)",
+                "Basic Monthly Salary (Previous Year)",
                 min_value=0.0,
                 value=10000.0,
                 step=500.0
@@ -1164,7 +1317,7 @@ with tabs[2]:
                 "Tenure (Years)",
                 min_value=0.0,
                 value=5.0,
-                step=0.5
+                step=1.0
             )
 
             fund_return_pct = st.number_input(
@@ -1178,13 +1331,11 @@ with tabs[2]:
         salary_growth = salary_growth_pct / 100
         fund_return = fund_return_pct / 100
 
-        current_salary = prev_salary * (1 + salary_growth)
-
         st.markdown("---")
 
-        # ---------------------------------
-        # GRATUITY CALCULATION
-        # ---------------------------------
+        # -----------------------------
+        # GRATUITY RATE FUNCTION
+        # -----------------------------
 
         def gratuity_rate(tenure):
             if tenure < 1:
@@ -1196,38 +1347,51 @@ with tabs[2]:
             else:
                 return (5 * 0.05833) + ((25 - 5) * 0.08333)
 
-        rate = gratuity_rate(tenure_years)
+        # -----------------------------
+        # LIABILITY + FUND ENGINE
+        # -----------------------------
 
-        gratuity_unfunded = current_salary * rate
-
-        # Funded Model
-        accrued = 0
+        fund_balance = 0
+        previous_liability = 0
         yearly_records = []
 
-        for year in range(int(tenure_years)):
+        for year in range(1, int(tenure_years) + 1):
 
-            salary_year = prev_salary * ((1 + salary_growth) ** year)
+            # Monthly salary progression
+            monthly_salary = prev_salary * ((1 + salary_growth) ** (year - 1))
+            annual_salary = monthly_salary * 12
 
-            if year < 5:
-                yearly_accrual = salary_year * 0.05833
-            else:
-                yearly_accrual = salary_year * 0.08333
+            # Total liability using same function
+            rate = gratuity_rate(year)
+            total_liability = annual_salary * rate
 
-            accrued = (accrued + yearly_accrual) * (1 + fund_return)
+            # Contribution = change in liability
+            contribution = total_liability - previous_liability
+            if year == 1:
+                contribution = total_liability
+
+            # Fund roll-forward (same as main engine without exit)
+            opening_fund = fund_balance
+            fund_before_return = opening_fund + contribution
+            fund_balance = fund_before_return * (1 + fund_return)
 
             yearly_records.append({
-                "Year": year + 1,
-                "Salary": salary_year,
-                "Accrual": yearly_accrual,
-                "Fund Value": accrued
+                "Year": year,
+                "Annual Salary (AED)": annual_salary,
+                "Total Liability (AED)": total_liability,
+                "Contribution (AED)": contribution,
+                "Fund Value (AED)": fund_balance
             })
 
-        gratuity_funded = accrued
+            previous_liability = total_liability
+
+        gratuity_unfunded = previous_liability
+        gratuity_funded = fund_balance
         funding_gap = gratuity_funded - gratuity_unfunded
 
-        # ---------------------------------
-        # EOS SUMMARY (Smaller Font)
-        # ---------------------------------
+        # -----------------------------
+        # EOS SUMMARY
+        # -----------------------------
 
         st.markdown("### EOS Summary")
 
@@ -1244,19 +1408,29 @@ with tabs[2]:
 
         st.markdown("---")
 
-        # ---------------------------------
-        # INDIVIDUAL BENEFIT TABLE
-        # ---------------------------------
+        # -----------------------------
+        # BENEFIT TABLE
+        # -----------------------------
 
         st.markdown("### Individual Benefit Breakdown")
 
-        benefit_df = pd.DataFrame(yearly_records)
+        benefit_df = pd.DataFrame(yearly_records).round(0)
 
-        benefit_df["Salary"] = benefit_df["Salary"].round(0)
-        benefit_df["Accrual"] = benefit_df["Accrual"].round(0)
-        benefit_df["Fund Value"] = benefit_df["Fund Value"].round(0)
+        st.markdown(
+            """
+            <div style="
+                background-color:#FAF6EB;
+                padding:10px;
+                border-left:5px solid #F5B718;
+                font-weight:600;">
+                Liability-based contribution method.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         st.dataframe(
             benefit_df,
-            use_container_width=True
+            use_container_width=True,
+            hide_index=True
         )
