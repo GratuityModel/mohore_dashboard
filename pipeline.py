@@ -769,6 +769,31 @@ def run_full_survival_eosg_model(
                         exit_payout_wr,
                         fund_wr
                     ]
+                
+                # ==================================================
+                # EXIT-ADJUSTED LIABILITY (AFTER FUND MOVEMENT)
+                # ==================================================
+
+                # Remaining active members after exit
+                g["remaining_members"] = g["survived_employee"]
+
+                # Liability only for active members
+                g["exit_adjusted_liability"] = (
+                    g["remaining_members"] *
+                    g["gratuity_per_employee"]
+                )
+
+                # Funding gap WITHOUT return
+                g["fund_gap_exit_adj_no_return"] = (
+                    g["exit_adjusted_liability"] -
+                    g["closing_fund_no_return"]
+                )
+
+                # Funding gap WITH return
+                g["fund_gap_exit_adj_with_return"] = (
+                    g["exit_adjusted_liability"] -
+                    g["closing_fund_with_return"]
+                )
 
                 final_blocks.append(g)
 
@@ -800,6 +825,9 @@ def aggregate_industry_year_combined(df):
 
     df["annual_salary_total"] = df["salary_x_emp"] * 12
     df["annual_gratuity_total"] = df["gratuity_x_emp"]
+
+    # 🔥 EXIT-ADJUSTED LIABILITY (cohort level)
+    df["exit_adj_liability_total"] = df["exit_adjusted_liability"]
 
     # -----------------------------
     # Cohort-level reconciliation
@@ -835,6 +863,9 @@ def aggregate_industry_year_combined(df):
         gratuity_weighted_sum=("gratuity_x_emp", "sum"),
         annual_total_gratuity_accrual=("annual_gratuity_total", "sum"),
 
+        # 🔥 EXIT ADJUSTED LIABILITY
+        exit_adjusted_liability=("exit_adj_liability_total", "sum"),
+
         annual_fund_contribution=("fund_contribution", "sum"),
 
         opening_fund_no_return=("opening_fund_no_return", "sum"),
@@ -847,7 +878,6 @@ def aggregate_industry_year_combined(df):
         exit_payout_no_return=("exit_payout_no_return", "sum"),
         exit_payout_with_return=("exit_payout_with_return", "sum"),
 
-        # 🔥 sum cohort-level recon
         recon_no_return=("recon_no_return", "sum"),
         recon_with_return=("recon_with_return", "sum"),
     )
@@ -872,7 +902,7 @@ def aggregate_industry_year_combined(df):
     )
 
     # ==========================================================
-    # 4️⃣ FUND MOVEMENT ANALYSIS
+    # 4️⃣ FUND MOVEMENT ANALYSIS (UNCHANGED)
     # ==========================================================
     grouped["net_cashflow_no_return"] = (
         grouped["annual_fund_contribution"]
@@ -898,7 +928,7 @@ def aggregate_industry_year_combined(df):
     )
 
     # ==========================================================
-    # 5️⃣ CONTINUITY CHECK
+    # 5️⃣ CONTINUITY CHECK (UNCHANGED)
     # ==========================================================
     grouped["continuity_check_no_return"] = (
         grouped.groupby("industry")["opening_fund_no_return"]
@@ -913,7 +943,7 @@ def aggregate_industry_year_combined(df):
     )
 
     # ==========================================================
-    # 6️⃣ FUND GAP
+    # 6️⃣ ORIGINAL FUND GAP (FULL LIABILITY)
     # ==========================================================
     grouped["fund_gap_no_return"] = (
         grouped["annual_total_gratuity_accrual"]
@@ -926,7 +956,20 @@ def aggregate_industry_year_combined(df):
     )
 
     # ==========================================================
-    # 7️⃣ FINAL OUTPUT ORDER
+    # 7️⃣ EXIT-ADJUSTED FUND GAP (NEW)
+    # ==========================================================
+    grouped["fund_gap_exit_adj_no_return"] = (
+        grouped["exit_adjusted_liability"]
+        - grouped["closing_fund_no_return"]
+    )
+
+    grouped["fund_gap_exit_adj_with_return"] = (
+        grouped["exit_adjusted_liability"]
+        - grouped["closing_fund_with_return"]
+    )
+
+    # ==========================================================
+    # 8️⃣ FINAL OUTPUT ORDER
     # ==========================================================
     grouped = grouped[[
         "industry",
@@ -940,6 +983,7 @@ def aggregate_industry_year_combined(df):
 
         "weighted_monthly_gratuity_per_employee",
         "annual_total_gratuity_accrual",
+        "exit_adjusted_liability",
 
         "opening_fund_no_return",
         "annual_fund_contribution",
@@ -961,6 +1005,9 @@ def aggregate_industry_year_combined(df):
 
         "fund_gap_no_return",
         "fund_gap_with_return",
+
+        "fund_gap_exit_adj_no_return",
+        "fund_gap_exit_adj_with_return",
     ]]
 
     return grouped
