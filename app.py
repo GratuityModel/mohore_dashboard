@@ -1079,7 +1079,11 @@ with tabs[1]:
             title="Change in Closing Fund vs Change in Liability (From 2026)",
             paper_bgcolor="white",
             plot_bgcolor="white",
-            yaxis_title="Change (Bn)"
+            yaxis_title="Change (Bn)",
+            font=dict(color="#111111"),              # <-- ADD THIS
+            legend=dict(
+                font=dict(color="#111111")           # <-- ADD THIS
+            )
         )
 
         st.plotly_chart(fig_change, use_container_width=True)
@@ -1434,4 +1438,5 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
+
 
