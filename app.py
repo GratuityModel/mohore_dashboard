@@ -1085,18 +1085,7 @@ with tabs[1]:
                 font=dict(color="#111111")           
             )
         )
-        fig_change.update_layout(
-            xaxis=dict(
-                title="Year",
-                tickfont=dict(color="#111111"),
-                titlefont=dict(color="#111111")
-            ),
-            yaxis=dict(
-                title="Change (Bn)",
-                tickfont=dict(color="#111111"),
-                titlefont=dict(color="#111111")
-            )
-        )
+        
 
         st.plotly_chart(fig_change, use_container_width=True)
 
@@ -1450,6 +1439,7 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
+
 
 
 
