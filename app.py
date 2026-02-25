@@ -1076,13 +1076,25 @@ with tabs[1]:
 
         fig_change.update_layout(
             barmode="group",
-            title="Change in Closing Fund vs Change in Liability (From 2026)",
+            title="Change in Closing Fund vs Change in Liability",
             paper_bgcolor="white",
             plot_bgcolor="white",
             yaxis_title="Change (Bn)",
-            font=dict(color="#111111"),              # <-- ADD THIS
+            font=dict(color="#111111"),             
             legend=dict(
-                font=dict(color="#111111")           # <-- ADD THIS
+                font=dict(color="#111111")           
+            )
+        )
+        fig_change.update_layout(
+            xaxis=dict(
+                title="Year",
+                tickfont=dict(color="#111111"),
+                titlefont=dict(color="#111111")
+            ),
+            yaxis=dict(
+                title="Change (Bn)",
+                tickfont=dict(color="#111111"),
+                titlefont=dict(color="#111111")
             )
         )
 
@@ -1438,5 +1450,6 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
+
 
 
