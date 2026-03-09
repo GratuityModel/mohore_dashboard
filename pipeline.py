@@ -68,12 +68,10 @@ def generate_merged_industry_data(
         pd.to_numeric, errors="coerce"
     )
 
-    print("i am here")
     # Convert >1 values to decimal
     for col in pct_columns:
         if merged_df[col].max() > 1:
             merged_df[col] = merged_df[col] / 100
-            print(merged_df[col])
 
     # -----------------------------
     # 5. Recalculate Metrics
@@ -141,21 +139,23 @@ def generate_employee_salary_forecast(
     employee_output_path=None,
     salary_output_path=None
 ):
-    # Assumes df_emp and merged_industry_df are already DataFrames
+
     df_emp = df_emp.copy()
     df_rates = merged_industry_df.copy()
+
     df_emp.columns = df_emp.columns.str.strip()
     df_rates.columns = df_rates.columns.str.strip()
-    # Standardize names
+
     df_emp = df_emp.rename(columns={
         "Average Basic Salary": "Average_Base_Salary"
     })
+
     df_rates = df_rates.rename(columns={
         "Age_Bracket": "Age_Brackets"
     })
 
     # ==========================================================
-    # 2. MERGE RATES
+    # MERGE INDUSTRY RATES
     # ==========================================================
     merge_cols = [
         "Industry",
@@ -178,42 +178,106 @@ def generate_employee_salary_forecast(
     )
 
     # ==========================================================
-    # 3. BASE YEAR
+    # 🔹 AGGREGATE FIRST
+    # ==========================================================
+
+    # Employee aggregation
+    emp_agg = (
+        df.groupby(
+            ["Industry", "Age_Brackets", "Tenure"],
+            as_index=False
+        )["Employees"].sum()
+    )
+
+    # Salary weighted average
+    sal_agg = (
+        df.groupby(
+            ["Industry", "Age_Brackets", "Tenure"]
+        )
+        .apply(lambda x: np.average(
+            x["Average_Base_Salary"],
+            weights=x["Employees"]
+        ))
+        .reset_index(name="Average_Base_Salary")
+    )
+
+    df = emp_agg.merge(
+        sal_agg,
+        on=["Industry", "Age_Brackets", "Tenure"]
+    )
+
+    # Attach industry rates
+    df = df.merge(
+        df_rates[merge_cols],
+        on=["Industry", "Age_Brackets"],
+        how="left"
+    )
+
+    # ==========================================================
+    # BASE YEAR
     # ==========================================================
     df[f"Emp_{start_year}"] = df["Employees"]
     df[f"Salary_{start_year}"] = df["Average_Base_Salary"]
 
     # ==========================================================
-    # 4. BUILD FULL CUMULATIVE SERIES
+    # EMPLOYEE FORECAST
     # ==========================================================
     tenure0_mask = df["Tenure"] == 0
     non_tenure0_mask = ~tenure0_mask
 
-    # Keep base year cumulative copy
     df[f"Emp_{start_year}_cum"] = df[f"Emp_{start_year}"]
 
     for year in range(start_year + 1, end_year + 1):
 
         prev = year - 1
 
-        # CUMULATIVE expansion growth (tenure 0 only)
         df.loc[tenure0_mask, f"Emp_{year}_cum"] = (
             df.loc[tenure0_mask, f"Emp_{prev}_cum"]
             * (1 + df.loc[tenure0_mask, "Expansion Hiring %"])
         )
 
-        # Other tenures remain zero cumulative
         df.loc[non_tenure0_mask, f"Emp_{year}_cum"] = 0
 
-        # Salary grows normally (unchanged)
-        df[f"Salary_{year}"] = (
-            df[f"Salary_{prev}"] *
-            (1 + df["Salary Growth %"])
-        )
+    # ==========================================================
+    # SALARY FORECAST (MATRIX METHOD)
+    # ==========================================================
+
     
 
+    years = list(range(start_year, end_year + 1))
+    salary_cols = [f"Salary_{y}" for y in years]
+
+    df = df.sort_values(["Industry", "Age_Brackets", "Tenure"])
+
+    for (ind, age), g in df.groupby(["Industry", "Age_Brackets"]):
+
+        g = g.sort_values("Tenure")
+        idx = g.index
+        horizontal_growth = 1 + g["Salary Growth %"].iloc[0]
+        diagonal_growth = 1 + g["Salary Growth %"].iloc[0]
+        print(f"Using horizontal growth: {horizontal_growth:.4f}, diagonal growth: {diagonal_growth:.4f}")
+
+        n_tenure = len(g)
+        n_years = len(years)
+
+        matrix = np.zeros((n_tenure, n_years))
+
+        # First column
+        matrix[:, 0] = g[f"Salary_{start_year}"].values
+
+        # First row horizontal
+        for j in range(1, n_years):
+            matrix[0, j] = matrix[0, j-1] * horizontal_growth
+
+        # Diagonal propagation
+        for i in range(1, n_tenure):
+            for j in range(1, n_years):
+                matrix[i, j] = matrix[i-1, j-1] * diagonal_growth
+
+        df.loc[idx, salary_cols] = matrix
+
     # ==========================================================
-    # 5. CONVERT TO INCREMENTAL (2026 onward)
+    # CONVERT EMPLOYEES TO INCREMENTAL
     # ==========================================================
 
     df[f"Emp_{start_year}"] = df[f"Emp_{start_year}_cum"]
@@ -223,69 +287,28 @@ def generate_employee_salary_forecast(
         prev = year - 1
 
         df[f"Emp_{year}"] = (
-            df[f"Emp_{year}_cum"] -
-            df[f"Emp_{prev}_cum"]
+            df[f"Emp_{year}_cum"]
+            - df[f"Emp_{prev}_cum"]
         )
 
-    # Keep only tenure 0 incremental
     emp_cols = [f"Emp_{y}" for y in range(start_year, end_year + 1)]
+
     df.loc[non_tenure0_mask, emp_cols[1:]] = 0
-    cum_cols = [c for c in df.columns if c.endswith("_cum")]
-    df.drop(columns=cum_cols, inplace=True)
 
-    # ==========================================================
-    # 6. AGGREGATE EMPLOYEES
-    # ==========================================================
-    emp_cols = [c for c in df.columns if c.startswith("Emp_")]
+    df.drop(columns=[c for c in df.columns if c.endswith("_cum")], inplace=True)
 
-    employee_agg = (
-        df.groupby(
-            ["Industry", "Age_Brackets", "Tenure"],
-            as_index=False
-        )[emp_cols]
-        .sum()
-    )
+    employee_agg = df[["Industry","Age_Brackets","Tenure"] + emp_cols]
+    salary_agg = df[["Industry","Age_Brackets","Tenure"] + salary_cols]
 
-    salary_cols = [f"Salary_{y}" for y in range(start_year, end_year + 1)]
-
-    salary_agg = (
-        df.groupby(
-            ["Industry", "Age_Brackets", "Tenure"],
-            as_index=False
-        )
-        .apply(lambda x: pd.Series({
-            col: (x[col] * x["Employees"]).sum() / x["Employees"].sum()
-            for col in salary_cols
-        }))
-        .reset_index()
-    )
-    salary_agg = salary_agg[
-        ["Industry", "Age_Brackets", "Tenure"] +
-        [f"Salary_{y}" for y in range(start_year, end_year + 1)]
-    ]
-
-    # ==========================================================
-    # 8. NEW HIRING LOGIC
-    # ==========================================================
-    emp_cols_excl_base = [
-        c for c in employee_agg.columns
-        if c.startswith("Emp_") and c != f"Emp_{start_year}"
-    ]
-
-    mask_invalid = ~employee_agg["Tenure"].isin([0, 0.5])
-    employee_agg.loc[mask_invalid, emp_cols_excl_base] = 0
-
-    # ==========================================================
-    # 9. OPTIONAL SAVE
-    # ==========================================================
     if save_output:
+
         if employee_output_path:
             employee_agg.to_excel(employee_output_path, index=False)
+
         if salary_output_path:
             salary_agg.to_excel(salary_output_path, index=False)
 
     return employee_agg, salary_agg
-
 
 def generate_survival_template_cohort_style(
     meta_info_df,
@@ -527,7 +550,8 @@ def attach_exit_and_replacement(
 
 def run_full_survival_eosg_model(
     df,
-    fund_return_rate=0.04,
+    fund_return_rate=0.08,
+    ter_rate=0.01,   # ✅ Added TER parameter
     start_year=2025,
     pos=True
 ):
@@ -541,9 +565,6 @@ def run_full_survival_eosg_model(
 
     final_blocks = []
 
-    # -----------------------------------------------------
-    # Loop Industry × Age_Bracket
-    # -----------------------------------------------------
     for (ind, age), block in df.groupby(
         ["industry", "age_bracket"],
         sort=False
@@ -567,9 +588,6 @@ def run_full_survival_eosg_model(
             else:
                 phase2.append(c)
 
-        # ==================================================
-        # PROCESS COHORTS
-        # ==================================================
         for cohort_list in [phase1, phase2]:
 
             for c in cohort_list:
@@ -579,9 +597,10 @@ def run_full_survival_eosg_model(
 
                 g["survived_employee"] = 0.0
                 g["exit_employee"] = 0.0
+                g["ter_cost"] = 0.0   # ✅ TER column
 
                 # --------------------------------------------------
-                # SURVIVAL ENGINE (UNCHANGED)
+                # SURVIVAL ENGINE
                 # --------------------------------------------------
                 for i in range(len(g)):
 
@@ -625,7 +644,7 @@ def run_full_survival_eosg_model(
                     exit_pool[key] = exit_pool.get(key, 0) + replacement
 
                 # ==================================================
-                # GRATUITY RATE LOGIC
+                # GRATUITY CALCULATION
                 # ==================================================
                 def gratuity_rate(tenure):
                     if tenure < 1:
@@ -646,7 +665,7 @@ def run_full_survival_eosg_model(
                 )
 
                 # ==================================================
-                # LIABILITY & CONTRIBUTION
+                # LIABILITY
                 # ==================================================
                 g["opening_members"] = (
                     g["survived_employee"] +
@@ -669,14 +688,10 @@ def run_full_survival_eosg_model(
 
                 if pos:
                     g["fund_contribution"] = g["fund_contribution"].clip(lower=0)
-               
-
-                
 
                 # ==================================================
-                # FUND ROLL FORWARD (POOLED LOGIC)
+                # FUND ENGINE
                 # ==================================================
-
                 g["opening_fund_no_return"] = 0.0
                 g["closing_fund_no_return"] = 0.0
                 g["exit_payout_no_return"] = 0.0
@@ -700,42 +715,35 @@ def run_full_survival_eosg_model(
                         g.loc[idx, "exit_employee"]
                     )
 
-                    # --------------------------------------------------
-                    # POLICY: Fund starts from 2026 onward
-                    # --------------------------------------------------
-                    if year == 2025:
+                    if year == start_year:
                         contribution_for_fund = 0.0
                         apply_return = False
                     else:
                         contribution_for_fund = contribution
                         apply_return = True
 
-                    # =========================
+                    # -----------------------
                     # WITHOUT RETURN
-                    # =========================
+                    # -----------------------
                     opening_nr = fund_nr
                     fund_before_exit_nr = opening_nr + contribution_for_fund
 
                     if opening_members > 0:
-                        asset_per_employee_nr = (
-                            fund_before_exit_nr / opening_members
-                        )
+                        asset_per_employee_nr = fund_before_exit_nr / opening_members
                     else:
                         asset_per_employee_nr = 0.0
 
                     exit_payout_nr = exit_emp * asset_per_employee_nr
                     fund_nr = fund_before_exit_nr - exit_payout_nr
 
-                    # =========================
+                    # -----------------------
                     # WITH RETURN
-                    # =========================
+                    # -----------------------
                     opening_wr = fund_wr
                     fund_before_exit_wr = opening_wr + contribution_for_fund
 
                     if opening_members > 0:
-                        asset_per_employee_wr = (
-                            fund_before_exit_wr / opening_members
-                        )
+                        asset_per_employee_wr = fund_before_exit_wr / opening_members
                     else:
                         asset_per_employee_wr = 0.0
 
@@ -744,14 +752,16 @@ def run_full_survival_eosg_model(
 
                     if apply_return:
                         fund_return = fund_after_exit_wr * fund_return_rate
-                        fund_wr = fund_after_exit_wr + fund_return
+                        fund_after_return = fund_after_exit_wr + fund_return
                     else:
                         fund_return = 0.0
-                        fund_wr = fund_after_exit_wr
+                        fund_after_return = fund_after_exit_wr
 
-                    # =========================
+                    # ✅ TER deduction
+                    ter_cost = fund_after_return * ter_rate
+                    fund_wr = fund_after_return - ter_cost
+
                     # STORE
-                    # =========================
                     g.loc[idx, [
                         "opening_fund_no_return",
                         "exit_payout_no_return",
@@ -759,7 +769,8 @@ def run_full_survival_eosg_model(
                         "opening_fund_with_return",
                         "fund_return",
                         "exit_payout_with_return",
-                        "closing_fund_with_return"
+                        "closing_fund_with_return",
+                        "ter_cost"
                     ]] = [
                         opening_nr,
                         exit_payout_nr,
@@ -767,11 +778,11 @@ def run_full_survival_eosg_model(
                         opening_wr,
                         fund_return,
                         exit_payout_wr,
-                        fund_wr
+                        fund_wr,
+                        ter_cost
                     ]
-                
                 # ==================================================
-                # EXIT-ADJUSTED LIABILITY (AFTER FUND MOVEMENT)
+                # EXIT-ADJUSTED LIABILITY
                 # ==================================================
 
                 # Remaining active members after exit
@@ -843,6 +854,7 @@ def aggregate_industry_year_combined(df):
         df["opening_fund_with_return"]
         + df["fund_return"]
         + df["fund_contribution"]
+        - df["ter_cost"]
         - df["exit_payout_with_return"]
         - df["closing_fund_with_return"]
     )
@@ -863,7 +875,6 @@ def aggregate_industry_year_combined(df):
         gratuity_weighted_sum=("gratuity_x_emp", "sum"),
         annual_total_gratuity_accrual=("annual_gratuity_total", "sum"),
 
-        # 🔥 EXIT ADJUSTED LIABILITY
         exit_adjusted_liability=("exit_adj_liability_total", "sum"),
 
         annual_fund_contribution=("fund_contribution", "sum"),
@@ -873,6 +884,7 @@ def aggregate_industry_year_combined(df):
 
         opening_fund_with_return=("opening_fund_with_return", "sum"),
         fund_return=("fund_return", "sum"),
+        ter_cost=("ter_cost", "sum"),   # ← ADD THIS
         closing_fund_with_return=("closing_fund_with_return", "sum"),
 
         exit_payout_no_return=("exit_payout_no_return", "sum"),
@@ -912,6 +924,7 @@ def aggregate_industry_year_combined(df):
     grouped["net_cashflow_with_return"] = (
         grouped["annual_fund_contribution"]
         + grouped["fund_return"]
+        - grouped["ter_cost"]
         - grouped["exit_payout_with_return"]
     )
 
@@ -971,7 +984,7 @@ def aggregate_industry_year_combined(df):
     # ==========================================================
     # 8️⃣ FINAL OUTPUT ORDER
     # ==========================================================
-    grouped = grouped[[
+    grouped = grouped[[ 
         "industry",
         "year",
 
@@ -996,18 +1009,9 @@ def aggregate_industry_year_combined(df):
 
         "opening_fund_with_return",
         "fund_return",
+        "ter_cost",
         "exit_payout_with_return",
         "closing_fund_with_return",
-        "fund_added_with_return",
-        "net_cashflow_with_return",
-        "recon_with_return",
-        "continuity_check_with_return",
-
-        "fund_gap_no_return",
-        "fund_gap_with_return",
-
-        "fund_gap_exit_adj_no_return",
-        "fund_gap_exit_adj_with_return",
     ]]
 
     return grouped
@@ -1135,7 +1139,8 @@ def apply_economic_impact_combined(
 
 def generate_cohort_fund_scenarios(
     combined_df,
-    start_year=2025
+    start_year=2025,
+    ter_rate=0.01
 ):
     """
     Cohort-wise pooled fund simulation at:
@@ -1162,10 +1167,12 @@ def generate_cohort_fund_scenarios(
     result_blocks = []
 
     return_rates = {
-        "0": 0.0,
+        "0": 0.00,
+        "2": 0.02,
         "4": 0.04,
         "6": 0.06,
-        "8": 0.08
+        "8": 0.08,
+        "12": 0.12
     }
 
     for (ind, age, cohort), g in df.groupby(
@@ -1236,9 +1243,16 @@ def generate_cohort_fund_scenarios(
                 # 5️⃣ Apply return (only after start_year)
                 # ---------------------------------
                 if apply_return:
-                    fund = fund_after_exit * (1 + r)
+
+                    fund_after_return = fund_after_exit * (1 + r)
+
+                    ter_cost = fund_after_return * ter_rate
+
+                    fund = fund_after_return - ter_cost
+
                 else:
                     fund = fund_after_exit
+                    ter_cost = 0.0
 
                 balances.append(fund)
 
@@ -1256,16 +1270,129 @@ def generate_cohort_fund_scenarios(
                 "exit_employee",
                 "fund_contribution",
                 "fund_0",
+                "fund_2",
                 "fund_4",
                 "fund_6",
                 "fund_8",
+                "fund_12",
                 "fund_0_exit_adj",
+                "fund_2_exit_adj",
                 "fund_4_exit_adj",
                 "fund_6_exit_adj",
-                "fund_8_exit_adj"
+                "fund_8_exit_adj",
+                "fund_12_exit_adj"
             ]]
         )
 
     final_df = pd.concat(result_blocks).reset_index(drop=True)
 
     return final_df
+
+def apply_economic_impact_from_fund_stock(
+    industry_year_df,
+    economic_df,
+    leakage_rate=0.28
+):
+    """
+    Economic impact based on accumulated fund stock
+    (closing_fund_with_return) instead of annual contributions.
+    """
+
+    df = industry_year_df.copy()
+    econ = economic_df.copy()
+
+    # ----------------------------------------------------------
+    # 1. STANDARDIZE KEYS
+    # ----------------------------------------------------------
+    df["industry"] = (
+        df["industry"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    econ["industry"] = (
+        econ["Industry"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
+
+    # ----------------------------------------------------------
+    # 2. MERGE ECONOMIC PARAMETERS
+    # ----------------------------------------------------------
+    df = df.merge(
+        econ,
+        on="industry",
+        how="left"
+    )
+
+    # ----------------------------------------------------------
+    # 3. YEAR TOTALS (FUND STOCK BASE)
+    # ----------------------------------------------------------
+    yearly_totals = df.groupby(
+        "year",
+        as_index=False
+    ).agg(
+        yearly_total_payroll=("annual_total_salary", "sum"),
+        yearly_total_fund=("closing_fund_with_return", "sum")
+    )
+
+    df = df.merge(
+        yearly_totals,
+        on="year",
+        how="left"
+    )
+
+    # ----------------------------------------------------------
+    # 4. ALLOCATE FUND STOCK BY PAYROLL SHARE
+    # ----------------------------------------------------------
+    df["fund_allocated"] = np.where(
+        df["yearly_total_payroll"] > 0,
+        df["yearly_total_fund"]
+        * df["annual_total_salary"]
+        / df["yearly_total_payroll"],
+        0
+    )
+
+    # ----------------------------------------------------------
+    # 5. ECONOMIC IMPACT CALCULATIONS
+    # ----------------------------------------------------------
+    df["investable_capital"] = df["fund_allocated"]
+
+    df["domestic_investable"] = (
+        df["investable_capital"] * (1 - leakage_rate)
+    )
+
+    df["output_impact"] = (
+        df["Output_Multiplier_Type_I"]
+        * df["domestic_investable"]
+    )
+
+    df["gva_impact"] = (
+        df["GVA_to_Output_Ratio"]
+        * df["domestic_investable"]
+    )
+
+    df["jobs_impact"] = (
+        df["Employment_Multiplier (jobs per AED 1M output)"]
+        * (df["domestic_investable"] / 1_000_000)
+    )
+
+    # ----------------------------------------------------------
+    # 6. FINAL OUTPUT
+    # ----------------------------------------------------------
+    df = df[[
+        "industry",
+        "year",
+        "total_employees",
+        "annual_total_salary",
+        "closing_fund_with_return",
+        "investable_capital",
+        "domestic_investable",
+        "output_impact",
+        "gva_impact",
+        "jobs_impact"
+    ]]
+
+    return df
