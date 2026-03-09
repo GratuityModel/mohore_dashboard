@@ -319,6 +319,7 @@ if "industry_assumptions" not in st.session_state:
 @st.cache_data(show_spinner=False)
 def run_full_engine(industry_assumptions,
                     fund_return,
+                    ter_rate,
                     leakage_rate,
                     output_delta,
                     gva_delta,
@@ -377,6 +378,7 @@ def run_full_engine(industry_assumptions,
     combined_df = run_full_survival_eosg_model(
         survival_ready,
         fund_return_rate=fund_return,
+        ter_rate=ter_rate,
         start_year=BASE_YEAR
     )
 
@@ -495,9 +497,16 @@ with st.sidebar:
 
     
     st.subheader("Fund return and leakage")
+
     fund_return = st.slider(
         "Fund Return %",
         0.0, 12.0, 8.0
+    ) / 100
+
+    ter_rate = st.slider(
+        "Fund Management Fee (TER %)",
+        0.0, 3.0, 1.0,
+        step=0.1
     ) / 100
 
     leakage = st.slider(
@@ -548,6 +557,7 @@ if "baseline_cache" not in st.session_state:
     st.session_state.baseline_cache = run_full_engine(
         merged_df,
         BASE_RETURN,
+        0.01,
         BASE_LEAKAGE,
         0.0,
         0.0,
@@ -579,6 +589,7 @@ assumptions_adj["Total Hiring %"] = (
 combined_full, industry_full, impact_full = run_full_engine(
     assumptions_adj,
     fund_return,
+    ter_rate,
     leakage,
     output_delta,
     gva_delta,
@@ -894,6 +905,7 @@ with tabs[1]:
             opening_fund=("opening_fund_with_return", "sum"),
             contribution=("annual_fund_contribution", "sum"),
             return_amt=("fund_return", "sum"),
+            ter_cost=("ter_cost", "sum"),
             payout=("exit_payout_with_return", "sum"),
             closing_fund=("closing_fund_with_return", "sum")
         )
@@ -903,6 +915,7 @@ with tabs[1]:
     fund_year["contribution_bn"] = fund_year["contribution"] / 1e9
     fund_year["return_bn"] = fund_year["return_amt"] / 1e9
     fund_year["payout_bn"] = fund_year["payout"] / 1e9
+    fund_year["ter_bn"] = fund_year["ter_cost"] / 1e9
 
     download_csv_button(
         fund_year,
@@ -915,7 +928,7 @@ with tabs[1]:
     latest_year = fund_year["year"].max()
     latest = fund_year[fund_year["year"] == latest_year]
 
-    k1, k2, k3, k4 = st.columns(4)
+    k1, k2, k3, k4, k5 = st.columns(5)
 
     k1.metric("Closing Fund (Bn)",
             f"{latest['closing_bn'].values[0]:,.2f}")
@@ -928,6 +941,8 @@ with tabs[1]:
 
     k4.metric("Annual Exit Payout (Bn)",
             f"{latest['payout_bn'].values[0]:,.2f}")
+    k5.metric("Fund Management Fee (Bn)",
+          f"{latest['ter_bn'].values[0]:,.2f}")
 
     st.markdown("---")
 
@@ -1019,6 +1034,14 @@ with tabs[1]:
             plot_bgcolor="white",
             title="Return vs Exit Payout"
         )
+        # TER line (ADD THIS)
+        fig_flow.add_trace(go.Scatter(
+            x=fund_year["year"],
+            y=fund_year["ter_bn"],
+            name="Fund Management Fee (Bn)",
+            mode="lines",
+            line=dict(color="#FF6B6B", width=3)
+        ))
 
         st.plotly_chart(fig_flow, use_container_width=True)
     with fund_tabs[2]:
@@ -1064,7 +1087,9 @@ with tabs[1]:
             x=change_df["year"],
             y=change_df["fund_change_bn"],
             name="Change in Closing Fund (Bn)",
-            marker_color="#053048"
+            marker_color="#053048",
+            text=change_df["fund_change_bn"].round(1),
+            textposition="outside"
         ))
 
         fig_change.add_trace(go.Bar(
@@ -1076,16 +1101,39 @@ with tabs[1]:
 
         fig_change.update_layout(
             barmode="group",
-            title="Change in Closing Fund vs Change in Liability",
+            title=dict(
+                text="Change in Closing Fund vs Change in Liability (From 2026)",
+                font=dict(size=18, color="black")
+            ),
+
             paper_bgcolor="white",
             plot_bgcolor="white",
-            yaxis_title="Change (Bn)",
-            font=dict(color="#111111"),             
+
+            font=dict(
+                color="black",
+                size=13
+            ),
+
+            xaxis=dict(
+                title=dict(
+                    text="Year",
+                    font=dict(color="black")
+                ),
+                tickfont=dict(color="black")
+            ),
+
+            yaxis=dict(
+                title=dict(
+                    text="Change (Bn)",
+                    font=dict(color="black")
+                ),
+                tickfont=dict(color="black")
+            ),
+
             legend=dict(
-                font=dict(color="#111111")           
+                font=dict(color="black", size=13)
             )
         )
-        
 
         st.plotly_chart(fig_change, use_container_width=True)
 
@@ -1439,7 +1487,3 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
-
-
-
-
