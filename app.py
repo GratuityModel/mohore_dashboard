@@ -953,7 +953,7 @@ with tabs[1]:
     fund_tabs = st.tabs([
         "Fund Growth",
         "Return vs Exit Payout",
-        "Fund Growth vs Liability Growth"
+        #"Fund Growth vs Liability Growth"
     ])
 
     # ======================================================
@@ -1044,98 +1044,98 @@ with tabs[1]:
         ))
 
         st.plotly_chart(fig_flow, use_container_width=True)
-    with fund_tabs[2]:
+    # with fund_tabs[2]:
 
         
-        # -------------------------------------------------------
-        # Change in Closing Fund vs Liability (From 2026)
-        # -------------------------------------------------------
+    #     # -------------------------------------------------------
+    #     # Change in Closing Fund vs Liability (From 2026)
+    #     # -------------------------------------------------------
 
-        change_df = (
-            industry_dyn.groupby("year", as_index=False)
-            .agg(
-                closing_fund=("closing_fund_with_return", "sum"),
-                liability=("exit_adjusted_liability", "sum")
-            )
-        )
+    #     change_df = (
+    #         industry_dyn.groupby("year", as_index=False)
+    #         .agg(
+    #             closing_fund=("closing_fund_with_return", "sum"),
+    #             liability=("exit_adjusted_liability", "sum")
+    #         )
+    #     )
 
-        # Remove 2025
-        change_df = change_df[change_df["year"] > 2025].copy()
+    #     # Remove 2025
+    #     change_df = change_df[change_df["year"] > 2025].copy()
 
-        # Convert to billions
-        change_df["closing_bn"] = change_df["closing_fund"] / 1e9
-        change_df["liability_bn"] = change_df["liability"] / 1e9
+    #     # Convert to billions
+    #     change_df["closing_bn"] = change_df["closing_fund"] / 1e9
+    #     change_df["liability_bn"] = change_df["liability"] / 1e9
 
-        # YoY Change
-        change_df["fund_change_bn"] = change_df["closing_bn"].diff()
-        change_df["liability_change_bn"] = change_df["liability_bn"].diff()
+    #     # YoY Change
+    #     change_df["fund_change_bn"] = change_df["closing_bn"].diff()
+    #     change_df["liability_change_bn"] = change_df["liability_bn"].diff()
 
-        # Remove first row (no previous year for diff)
-        change_df = change_df.dropna()
+    #     # Remove first row (no previous year for diff)
+    #     change_df = change_df.dropna()
 
-        # -----------------------------
-        # CHART
-        # -----------------------------
-        download_csv_button(
-            change_df,
-            "fund_vs_liability_change.csv"
-        )
+    #     # -----------------------------
+    #     # CHART
+    #     # -----------------------------
+    #     download_csv_button(
+    #         change_df,
+    #         "fund_vs_liability_change.csv"
+    #     )
         
-        fig_change = go.Figure()
+    #     fig_change = go.Figure()
 
-        fig_change.add_trace(go.Bar(
-            x=change_df["year"],
-            y=change_df["fund_change_bn"],
-            name="Change in Closing Fund (Bn)",
-            marker_color="#053048",
-            text=change_df["fund_change_bn"].round(1),
-            textposition="outside"
-        ))
+    #     fig_change.add_trace(go.Bar(
+    #         x=change_df["year"],
+    #         y=change_df["fund_change_bn"],
+    #         name="Change in Closing Fund (Bn)",
+    #         marker_color="#053048",
+    #         text=change_df["fund_change_bn"].round(1),
+    #         textposition="outside"
+    #     ))
 
-        fig_change.add_trace(go.Bar(
-            x=change_df["year"],
-            y=change_df["liability_change_bn"],
-            name="Change in Liability (Bn)",
-            marker_color="#F5B718"
-        ))
+    #     fig_change.add_trace(go.Bar(
+    #         x=change_df["year"],
+    #         y=change_df["liability_change_bn"],
+    #         name="Change in Liability (Bn)",
+    #         marker_color="#F5B718"
+    #     ))
 
-        fig_change.update_layout(
-            barmode="group",
-            title=dict(
-                text="Change in Closing Fund vs Change in Liability (From 2026)",
-                font=dict(size=18, color="black")
-            ),
+    #     fig_change.update_layout(
+    #         barmode="group",
+    #         title=dict(
+    #             text="Change in Closing Fund vs Change in Liability (From 2026)",
+    #             font=dict(size=18, color="black")
+    #         ),
 
-            paper_bgcolor="white",
-            plot_bgcolor="white",
+    #         paper_bgcolor="white",
+    #         plot_bgcolor="white",
 
-            font=dict(
-                color="black",
-                size=13
-            ),
+    #         font=dict(
+    #             color="black",
+    #             size=13
+    #         ),
 
-            xaxis=dict(
-                title=dict(
-                    text="Year",
-                    font=dict(color="black")
-                ),
-                tickfont=dict(color="black")
-            ),
+    #         xaxis=dict(
+    #             title=dict(
+    #                 text="Year",
+    #                 font=dict(color="black")
+    #             ),
+    #             tickfont=dict(color="black")
+    #         ),
 
-            yaxis=dict(
-                title=dict(
-                    text="Change (Bn)",
-                    font=dict(color="black")
-                ),
-                tickfont=dict(color="black")
-            ),
+    #         yaxis=dict(
+    #             title=dict(
+    #                 text="Change (Bn)",
+    #                 font=dict(color="black")
+    #             ),
+    #             tickfont=dict(color="black")
+    #         ),
 
-            legend=dict(
-                font=dict(color="black", size=13)
-            )
-        )
+    #         legend=dict(
+    #             font=dict(color="black", size=13)
+    #         )
+    #     )
 
-        st.plotly_chart(fig_change, use_container_width=True)
+    #     st.plotly_chart(fig_change, use_container_width=True)
 
 
 # ==========================================================
@@ -1487,3 +1487,4 @@ with tabs[2]:
             use_container_width=True,
             hide_index=True
         )
+
